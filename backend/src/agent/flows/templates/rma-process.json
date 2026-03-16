@@ -1,0 +1,87 @@
+{
+  "id": "rma-process",
+  "name": "RMA Process",
+  "description": "Guides the customer through the Return Merchandise Authorization process, including evidence collection, resolution preference, and ticket creation.",
+  "category": "returns",
+  "startNodeId": "start",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "question",
+      "content": "Let's begin the RMA process. Please confirm the product name and briefly describe the issue you're experiencing.",
+      "next": "collect_evidence",
+      "metadata": { "dataKey": "productAndIssue" }
+    },
+    {
+      "id": "collect_evidence",
+      "type": "question",
+      "content": "Please provide photos or other evidence of the defect. You can upload images or describe the visible damage in detail.",
+      "next": "preferred_resolution",
+      "metadata": { "dataKey": "evidence", "acceptsAttachments": true }
+    },
+    {
+      "id": "preferred_resolution",
+      "type": "question",
+      "content": "What is your preferred resolution?",
+      "options": [
+        { "label": "Replacement", "value": "replacement", "nextNodeId": "value_check" },
+        { "label": "Repair", "value": "repair", "nextNodeId": "value_check" },
+        { "label": "Refund", "value": "refund", "nextNodeId": "value_check" }
+      ],
+      "metadata": { "dataKey": "preferredResolution" }
+    },
+    {
+      "id": "value_check",
+      "type": "decision",
+      "content": "Checking product value against policy thresholds for automatic approval...",
+      "options": [
+        { "label": "Within auto-approval limit", "value": "auto", "nextNodeId": "create_rma_ticket" },
+        { "label": "Exceeds limit — needs manager approval", "value": "approval_needed", "nextNodeId": "pending_approval" }
+      ],
+      "metadata": { "dataKey": "valueCheckResult", "policyThreshold": 500, "actionType": "policy_check" }
+    },
+    {
+      "id": "pending_approval",
+      "type": "action",
+      "content": "This RMA requires manager approval due to the product value. Your request has been submitted for review.",
+      "next": "approval_decision",
+      "metadata": { "actionType": "request_approval" }
+    },
+    {
+      "id": "approval_decision",
+      "type": "decision",
+      "content": "Manager reviewing the RMA request...",
+      "options": [
+        { "label": "Approved", "value": "approved", "nextNodeId": "create_rma_ticket" },
+        { "label": "Denied", "value": "denied", "nextNodeId": "end_denied" }
+      ],
+      "metadata": { "dataKey": "approvalResult", "actionType": "await_approval" }
+    },
+    {
+      "id": "create_rma_ticket",
+      "type": "action",
+      "content": "Creating your RMA ticket with all collected information. A unique RMA number will be assigned.",
+      "next": "shipping_instructions",
+      "metadata": { "actionType": "create_ticket" }
+    },
+    {
+      "id": "shipping_instructions",
+      "type": "action",
+      "content": "Your RMA ticket has been created. Preparing shipping label and return instructions for your package.",
+      "next": "end_created",
+      "metadata": { "actionType": "generate_shipping" }
+    },
+    {
+      "id": "end_created",
+      "type": "end",
+      "content": "Your RMA has been successfully created. You will receive an email with your RMA number, prepaid shipping label, and return instructions. Please ship the product within 14 days.",
+      "metadata": { "outcome": "rma_created", "returnWindow": 14 }
+    },
+    {
+      "id": "end_denied",
+      "type": "end",
+      "content": "Unfortunately, the RMA request was not approved based on our current policies. You may contact customer support for further options or file an appeal.",
+      "metadata": { "outcome": "denied" }
+    }
+  ]
+}

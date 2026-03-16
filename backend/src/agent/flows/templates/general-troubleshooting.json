@@ -1,0 +1,92 @@
+{
+  "id": "general-troubleshooting",
+  "name": "General Troubleshooting",
+  "description": "A general-purpose diagnostic flow to identify and resolve common issues across software, hardware, account, and billing categories.",
+  "category": "support",
+  "startNodeId": "start",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "question",
+      "content": "What category best describes your issue?",
+      "options": [
+        { "label": "Software Issue", "value": "software", "nextNodeId": "env_info" },
+        { "label": "Hardware Issue", "value": "hardware", "nextNodeId": "env_info" },
+        { "label": "Account Issue", "value": "account", "nextNodeId": "account_details" },
+        { "label": "Billing Issue", "value": "billing", "nextNodeId": "billing_details" }
+      ],
+      "metadata": { "dataKey": "category" }
+    },
+    {
+      "id": "env_info",
+      "type": "question",
+      "content": "Please provide your environment details: Operating System, browser (if applicable), and product version.",
+      "next": "steps_to_reproduce",
+      "metadata": { "dataKey": "environment" }
+    },
+    {
+      "id": "steps_to_reproduce",
+      "type": "question",
+      "content": "Please describe the steps to reproduce the issue. Include what you were doing when the problem occurred.",
+      "next": "error_messages",
+      "metadata": { "dataKey": "stepsToReproduce" }
+    },
+    {
+      "id": "error_messages",
+      "type": "question",
+      "content": "Are there any error messages, codes, or screenshots you can share? Please paste the error text or describe what you see.",
+      "next": "can_resolve",
+      "metadata": { "dataKey": "errorMessages" }
+    },
+    {
+      "id": "account_details",
+      "type": "question",
+      "content": "Please describe the account issue you're experiencing (e.g., login failure, permissions, profile update).",
+      "next": "can_resolve",
+      "metadata": { "dataKey": "accountIssue" }
+    },
+    {
+      "id": "billing_details",
+      "type": "question",
+      "content": "Please describe the billing issue (e.g., unexpected charge, refund request, subscription change).",
+      "next": "can_resolve",
+      "metadata": { "dataKey": "billingIssue" }
+    },
+    {
+      "id": "can_resolve",
+      "type": "decision",
+      "content": "Based on the information provided, can the agent resolve this issue?",
+      "options": [
+        { "label": "Yes — suggest resolution", "value": "yes", "nextNodeId": "suggest_resolution" },
+        { "label": "No — escalate to specialist", "value": "no", "nextNodeId": "escalate" }
+      ],
+      "metadata": { "dataKey": "resolvable", "internal": true }
+    },
+    {
+      "id": "suggest_resolution",
+      "type": "action",
+      "content": "Here is the suggested resolution based on your issue details. Please try the recommended steps and let us know if the problem persists.",
+      "next": "end_resolved",
+      "metadata": { "actionType": "suggest_fix" }
+    },
+    {
+      "id": "escalate",
+      "type": "action",
+      "content": "This issue requires specialist attention. We are escalating your case to the appropriate team. You will receive a follow-up within 24 hours.",
+      "next": "end_escalated",
+      "metadata": { "actionType": "escalate", "sla": "24h" }
+    },
+    {
+      "id": "end_resolved",
+      "type": "end",
+      "content": "Your issue has been addressed. If you experience further problems, please don't hesitate to reach out again.",
+      "metadata": { "outcome": "resolved" }
+    },
+    {
+      "id": "end_escalated",
+      "type": "end",
+      "content": "Your case has been escalated to a specialist. A support ticket has been created and you will be contacted within 24 hours.",
+      "metadata": { "outcome": "escalated" }
+    }
+  ]
+}

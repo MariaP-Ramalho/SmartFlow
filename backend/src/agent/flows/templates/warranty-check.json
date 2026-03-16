@@ -1,0 +1,92 @@
+{
+  "id": "warranty-check",
+  "name": "Warranty Verification",
+  "description": "Verifies product warranty status and initiates RMA or offers alternatives based on coverage.",
+  "category": "warranty",
+  "startNodeId": "start",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "question",
+      "content": "Please provide your product serial number or order number so we can look up your warranty status.",
+      "next": "check_registered",
+      "metadata": { "dataKey": "serialOrOrderNumber" }
+    },
+    {
+      "id": "check_registered",
+      "type": "decision",
+      "content": "Checking if the product is registered in our system...",
+      "options": [
+        { "label": "Product found", "value": "yes", "nextNodeId": "check_warranty_active" },
+        { "label": "Product not found", "value": "no", "nextNodeId": "not_registered" }
+      ],
+      "metadata": { "dataKey": "isRegistered", "actionType": "lookup" }
+    },
+    {
+      "id": "not_registered",
+      "type": "question",
+      "content": "We couldn't find that product in our system. Please double-check the serial/order number, or provide your proof of purchase so we can register it manually.",
+      "next": "check_registered",
+      "metadata": { "dataKey": "proofOfPurchase" }
+    },
+    {
+      "id": "check_warranty_active",
+      "type": "decision",
+      "content": "Verifying warranty coverage dates and terms...",
+      "options": [
+        { "label": "Warranty active", "value": "active", "nextNodeId": "collect_issue" },
+        { "label": "Warranty expired", "value": "expired", "nextNodeId": "warranty_expired" }
+      ],
+      "metadata": { "dataKey": "warrantyStatus", "actionType": "verify" }
+    },
+    {
+      "id": "warranty_expired",
+      "type": "question",
+      "content": "Your warranty has expired. We can offer paid repair service or a discounted replacement. Which would you prefer?",
+      "options": [
+        { "label": "Paid repair", "value": "repair", "nextNodeId": "end_paid_repair" },
+        { "label": "Discounted replacement", "value": "replacement", "nextNodeId": "end_paid_replacement" },
+        { "label": "No thanks", "value": "decline", "nextNodeId": "end_declined" }
+      ],
+      "metadata": { "dataKey": "expiredWarrantyChoice" }
+    },
+    {
+      "id": "collect_issue",
+      "type": "question",
+      "content": "Your warranty is active. Please describe the issue you're experiencing with the product.",
+      "next": "proceed_rma",
+      "metadata": { "dataKey": "issueDescription" }
+    },
+    {
+      "id": "proceed_rma",
+      "type": "action",
+      "content": "Your product is covered under warranty. We are initiating the RMA process for you.",
+      "next": "end_rma",
+      "metadata": { "actionType": "initiate_rma" }
+    },
+    {
+      "id": "end_rma",
+      "type": "end",
+      "content": "Your RMA request has been created. You will receive shipping instructions and a prepaid label via email within 1-2 business days.",
+      "metadata": { "outcome": "rma_initiated" }
+    },
+    {
+      "id": "end_paid_repair",
+      "type": "end",
+      "content": "A paid repair request has been submitted. Our service team will contact you with a quote and next steps within 2-3 business days.",
+      "metadata": { "outcome": "paid_repair" }
+    },
+    {
+      "id": "end_paid_replacement",
+      "type": "end",
+      "content": "A discounted replacement order has been initiated. You will receive a confirmation email with pricing and delivery details shortly.",
+      "metadata": { "outcome": "paid_replacement" }
+    },
+    {
+      "id": "end_declined",
+      "type": "end",
+      "content": "Understood. If you change your mind or need further assistance, feel free to contact us anytime.",
+      "metadata": { "outcome": "declined" }
+    }
+  ]
+}
