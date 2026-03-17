@@ -1,5 +1,7 @@
 import { Controller, Post, Body, Get, HttpCode, Logger, Res, Query } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
+import { Public } from '../auth/auth.guard';
 import { UazapiService } from './uazapi.service';
 import { ChatService } from '../agent/chat.service';
 
@@ -33,6 +35,7 @@ interface UazapiWebhookPayload {
   messageId?: string;
 }
 
+@Public()
 @Controller('webhook/whatsapp')
 export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
@@ -42,11 +45,17 @@ export class WhatsAppWebhookController {
   >();
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
+  private readonly managerPhone: string;
+  private readonly agentName: string;
 
   constructor(
     private readonly uazapi: UazapiService,
     private readonly chatService: ChatService,
-  ) {}
+    private readonly config: ConfigService,
+  ) {
+    this.managerPhone = this.config.get<string>('MANAGER_WHATSAPP', '');
+    this.agentName = this.config.get<string>('AGENT_DISPLAY_NAME', 'Renato Solves');
+  }
 
   @Get('status')
   status() {
@@ -167,6 +176,8 @@ export class WhatsAppWebhookController {
     try {
       this.uazapi.sendTyping(phoneNumber, 8000);
 
+      this.mirrorToManager(`*${buffered.name}*: ${combinedMessage}`);
+
       const response = await this.chatService.chat({
         message: combinedMessage,
         sessionId: `wa-${phoneNumber}`,
@@ -188,6 +199,8 @@ export class WhatsAppWebhookController {
           }
           await this.uazapi.sendText(phoneNumber, paragraphs[i]);
         }
+
+        this.mirrorToManager(`*${this.agentName}*: ${response.reply}`);
       }
 
       this.logger.log(
@@ -204,6 +217,13 @@ export class WhatsAppWebhookController {
     } finally {
       this.processingLock.delete(phoneNumber);
     }
+  }
+
+  private mirrorToManager(text: string): void {
+    if (!this.managerPhone) return;
+    this.uazapi.sendText(this.managerPhone, text).catch((err) => {
+      this.logger.warn(`Failed to mirror to manager: ${err}`);
+    });
   }
 
   private extractText(data: UazapiWebhookPayload['data']): string | null {
