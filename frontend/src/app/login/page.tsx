@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
+import { useAuth } from "@/components/auth/auth-provider";
 import api from "@/lib/api";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,9 +20,7 @@ export default function LoginPage() {
 
     try {
       const { data } = await api.post("/auth/login", { email, password });
-      localStorage.setItem("auth_token", data.token);
-      localStorage.setItem("auth_user", JSON.stringify(data.user));
-      router.push("/");
+      login(data.token, data.user);
     } catch (err: any) {
       const msg = err.response?.data?.message;
       setError(msg || "Erro ao fazer login. Verifique suas credenciais.");
