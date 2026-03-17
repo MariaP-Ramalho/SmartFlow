@@ -38,6 +38,15 @@ deploy:
     - export VERSION=$(cat VERSION)
     - export DOCKER_HUB_USER=${DOCKER_HUB_USER}
     - cp stack-resolve.yml /opt/apps/resolve/docker-compose.yml
+    - |
+      if [ ! -f /opt/apps/resolve/.env ]; then
+        echo "WARN: /opt/apps/resolve/.env not found, creating from CI variables..."
+        echo "PORT=3001" > /opt/apps/resolve/.env
+        echo "MONGODB_URI=${MONGODB_URI}" >> /opt/apps/resolve/.env
+        echo "JWT_SECRET=${JWT_SECRET}" >> /opt/apps/resolve/.env
+        echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> /opt/apps/resolve/.env
+        echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" >> /opt/apps/resolve/.env
+      fi
     - cd /opt/apps/resolve
     - docker compose pull
     - docker compose up -d --remove-orphans
