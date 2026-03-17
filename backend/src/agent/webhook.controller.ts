@@ -1,6 +1,7 @@
 import { Controller, Post, Body, HttpCode, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { IsString, IsNumber, IsOptional, IsBoolean, IsArray } from 'class-validator';
+import { Public } from '../auth/auth.guard';
 import { ConversationService, ConversationTurnResult } from './conversation.service';
 
 class IncomingMessageDto {
@@ -51,6 +52,7 @@ class EscalateDto {
   operatorNote?: string;
 }
 
+@Public()
 @ApiTags('agent-webhook')
 @Controller('agent/webhook')
 export class WebhookController {
