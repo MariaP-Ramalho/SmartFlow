@@ -1,93 +1,153 @@
-# Resolve
+# Resolve-to-Close
 
+Agente de Suporte Autonomo que resolve solicitacoes fim a fim: identifica o problema, busca contexto, executa diagnosticos guiados, abre/atualiza tickets, aciona RMA/garantia quando aplicavel, e encerra o caso quando atendido -- com aprovacao humana por regras e trilha de auditoria completa.
 
+## Stack Tecnica
 
-## Getting started
+- **Backend**: NestJS 10 + TypeScript + Mongoose
+- **Frontend**: Next.js 14 (App Router) + TypeScript + Tailwind CSS v4 + shadcn-inspired components
+- **Database**: MongoDB
+- **LLM**: Multi-provider (OpenAI, Anthropic, Azure OpenAI) com fallback automatico
+- **Tickets**: ClickUp API v2
+- **Charts**: Recharts
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## Arquitetura
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.softwell.com.br/ia/apps/resolve.git
-git branch -M main
-git push -uf origin main
+backend/src/
+  agent/          -> Motor ReAct (loop autonomo + ferramentas + fluxos de diagnostico)
+  agent/llm/      -> Camada de abstracao LLM multi-provider
+  agent/tools/    -> Ferramentas do agente (tickets, KB, diagnostico, politicas)
+  agent/flows/    -> Motor de arvore de decisao + templates JSON
+  tickets/        -> CRUD de tickets + integracao ClickUp
+  knowledge/      -> RAG (ingestao, embeddings, busca semantica)
+  policies/       -> Motor de politicas + aprovacoes
+  audit/          -> Trilha de auditoria global
+  metrics/        -> Metricas ROI + computacao diaria
+
+frontend/src/
+  app/            -> Paginas (dashboard, tickets, auditoria, politicas, aprovacoes, KB)
+  components/     -> Componentes reutilizaveis (layout, ui, dashboard)
+  lib/            -> API client, utils
+  types/          -> TypeScript interfaces
 ```
 
-## Integrate with your tools
+## Requisitos
 
-- [ ] [Set up project integrations](https://gitlab.softwell.com.br/ia/apps/resolve/-/settings/integrations)
+- Node.js >= 18
+- MongoDB (local ou Atlas)
+- Pelo menos uma API key de LLM (OpenAI, Anthropic, ou Azure OpenAI)
+- ClickUp API key (opcional, para integracao de tickets)
 
-## Collaborate with your team
+## Setup
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### 1. Configurar variaveis de ambiente
 
-## Test and Deploy
+```bash
+# Backend
+cp backend/.env.example backend/.env
+# Edite backend/.env com suas chaves
 
-Use the built-in continuous integration in GitLab.
+# Frontend
+cp frontend/.env.example frontend/.env.local
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### 2. Instalar dependencias
 
-***
+```bash
+cd backend && npm install
+cd ../frontend && npm install
+```
 
-# Editing this README
+### 3. Iniciar MongoDB
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```bash
+# Se usando MongoDB local
+mongod --dbpath /data/db
 
-## Suggestions for a good README
+# Ou configure MONGODB_URI no .env para MongoDB Atlas
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### 4. Rodar o projeto
 
-## Name
-Choose a self-explaining name for your project.
+```bash
+# Terminal 1 - Backend (porta 3001)
+cd backend && npm run start:dev
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+# Terminal 2 - Frontend (porta 3000)
+cd frontend && npm run dev
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+### 5. Acessar
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:3001
+- **Swagger Docs**: http://localhost:3001/api/docs
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+## API Endpoints
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+### Agent
+- `POST /agent/process` - Processar novo caso
+- `POST /agent/message` - Mensagem de follow-up
+- `GET /agent/status/:caseId` - Status de um caso
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Tickets
+- `POST /tickets` - Criar ticket
+- `GET /tickets` - Listar tickets (com filtros)
+- `GET /tickets/:id` - Detalhe do ticket
+- `PATCH /tickets/:id` - Atualizar ticket
+- `PATCH /tickets/:id/status` - Mudar status
+- `POST /tickets/:id/resolve` - Resolver ticket
+- `GET /tickets/stats` - Estatisticas
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+### Knowledge Base
+- `POST /knowledge` - Ingerir documento
+- `POST /knowledge/bulk` - Ingestao em lote
+- `GET /knowledge` - Listar documentos
+- `GET /knowledge/search?q=` - Busca semantica
+- `PATCH /knowledge/:id` - Atualizar
+- `DELETE /knowledge/:id` - Remover
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+### Policies
+- `POST /policies` - Criar politica
+- `GET /policies` - Listar politicas
+- `POST /policies/evaluate` - Avaliar acao contra politicas
+- `POST /approvals` - Solicitar aprovacao
+- `GET /approvals` - Aprovacoes pendentes
+- `PATCH /approvals/:id/resolve` - Aprovar/Rejeitar
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+### Audit
+- `GET /audit` - Listar logs de auditoria
+- `GET /audit/case/:caseId` - Timeline de um caso
+- `GET /audit/stats` - Estatisticas de auditoria
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+### Metrics
+- `GET /metrics/dashboard` - Dashboard snapshot
+- `GET /metrics/summary` - Resumo por periodo
+- `GET /metrics/timeseries` - Serie temporal
+- `POST /metrics/compute` - Computar metricas diarias
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+## Fluxo do Agente
 
-## License
-For open source projects, say how it is licensed.
+1. Recebe solicitacao via POST /agent/process
+2. Cria caso (UUID) e ticket
+3. Busca contexto na base de conhecimento (RAG)
+4. Analisa com LLM e decide proxima acao
+5. Executa ferramentas (ticket, KB, diagnostico, politica)
+6. Verifica politicas antes de acoes de risco
+7. Se aprovacao necessaria, cria requisicao e aguarda
+8. Resolve ticket e registra na trilha de auditoria
+9. Cada passo e logado para auditoria completa
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Variaveis de Ambiente
+
+Veja `backend/.env.example` para a lista completa. As principais:
+
+| Variavel | Descricao |
+|---|---|
+| `MONGODB_URI` | URI do MongoDB |
+| `OPENAI_API_KEY` | Chave da API OpenAI |
+| `ANTHROPIC_API_KEY` | Chave da API Anthropic |
+| `CLICKUP_API_KEY` | Chave da API ClickUp |
+| `CLICKUP_LIST_ID` | ID da lista padrao no ClickUp |
+| `DEFAULT_LLM_PROVIDER` | Provider padrao (openai, anthropic, azure-openai) |
