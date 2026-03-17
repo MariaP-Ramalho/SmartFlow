@@ -139,6 +139,35 @@ cd frontend && npm run dev
 8. Resolve ticket e registra na trilha de auditoria
 9. Cada passo e logado para auditoria completa
 
+## Docker
+
+### Desenvolvimento local
+
+```bash
+# Criar .env no backend (copie de backend/.env.example)
+cp backend/.env.example backend/.env
+
+# Subir os containers
+docker compose up -d --build
+
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:3001
+# Swagger: http://localhost:3001/api/docs
+```
+
+### Produção (GitLab CI)
+
+O pipeline em `.gitlab-ci.yml` faz build e push das imagens `resolve-backend` e `resolve-frontend` para o Docker Hub, e deploy via `stack-resolve.yml`.
+
+**Variáveis no GitLab CI/CD:**
+- `DOCKER_HUB_USER` - usuário Docker Hub
+- `DOCKER_HUB_PWD` - senha (masked)
+- `NEXT_PUBLIC_API_URL` - URL pública da API (ex: `https://api.resolve.softwell.com.br`)
+
+**No servidor de deploy** (`/opt/apps/resolve`):
+- Criar `.env` com variáveis do backend (MONGODB_URI, JWT_SECRET, etc.) e `DOCKER_HUB_USER`, `VERSION`
+- Criar rede: `docker network create infra-network` (se não existir)
+
 ## Variaveis de Ambiente
 
 Veja `backend/.env.example` para a lista completa. As principais:

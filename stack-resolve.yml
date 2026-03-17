@@ -1,0 +1,46 @@
+services:
+  backend:
+    image: ${DOCKER_HUB_USER:-brunosbrasil}/resolve-backend:${VERSION:-latest}
+    container_name: resolve-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - infra-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    image: ${DOCKER_HUB_USER:-brunosbrasil}/resolve-frontend:${VERSION:-latest}
+    container_name: resolve-frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - infra-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  infra-network:
+    external: true

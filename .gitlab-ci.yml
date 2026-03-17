@@ -1,0 +1,43 @@
+stages:
+  - build-and-push
+  - deploy
+
+variables:
+  DOCKER_IMAGE_BACKEND: "$DOCKER_HUB_USER/resolve-backend"
+  DOCKER_IMAGE_FRONTEND: "$DOCKER_HUB_USER/resolve-frontend"
+
+build-and-push:
+  stage: build-and-push
+  tags:
+    - producao
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  only:
+    - main
+  script:
+    - echo "$DOCKER_HUB_PWD" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+    - VERSION=$(cat VERSION)
+    # Backend
+    - docker build -t $DOCKER_IMAGE_BACKEND:latest -t $DOCKER_IMAGE_BACKEND:$VERSION ./backend
+    - docker push $DOCKER_IMAGE_BACKEND:latest
+    - docker push $DOCKER_IMAGE_BACKEND:$VERSION
+    # Frontend (NEXT_PUBLIC_API_URL definido em CI/CD Variables do GitLab)
+    - docker build --build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3001} -t $DOCKER_IMAGE_FRONTEND:latest -t $DOCKER_IMAGE_FRONTEND:$VERSION ./frontend
+    - docker push $DOCKER_IMAGE_FRONTEND:latest
+    - docker push $DOCKER_IMAGE_FRONTEND:$VERSION
+
+deploy:
+  stage: deploy
+  tags:
+    - producao
+  only:
+    - main
+  script:
+    - mkdir -p /opt/apps/resolve
+    - export VERSION=$(cat VERSION)
+    - export DOCKER_HUB_USER=${DOCKER_HUB_USER}
+    - cp stack-resolve.yml /opt/apps/resolve/docker-compose.yml
+    - cd /opt/apps/resolve
+    - docker compose pull
+    - docker compose up -d --remove-orphans
