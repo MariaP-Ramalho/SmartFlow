@@ -13,6 +13,7 @@ import { AgentModule } from './agent/agent.module';
 import { ZapFlowPgModule } from './zapflow/zapflow-pg.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AuthModule } from './auth/auth.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { AuthModule } from './auth/auth.module';
 
     ScheduleModule.forRoot(),
     AuthModule,
+    HealthModule,
     ZapFlowPgModule,
     AuditModule,
     TicketsModule,
