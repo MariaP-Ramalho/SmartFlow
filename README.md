@@ -165,8 +165,13 @@ O pipeline em `.gitlab-ci.yml` faz build e push das imagens `resolve-backend` e 
 - `NEXT_PUBLIC_API_URL` - URL pública da API (ex: `https://api.resolve.softwell.com.br`)
 
 **No servidor de deploy** (`/opt/apps/resolve`):
-- Criar `.env` com variáveis do backend (MONGODB_URI, JWT_SECRET, etc.) e `DOCKER_HUB_USER`, `VERSION`
+- Criar `.env` com variáveis do backend (MONGODB_URI, JWT_SECRET, etc.) e `DOCKER_HUB_USER`, `VERSION`, `NEXT_PUBLIC_API_URL`, `CORS_ORIGINS`
 - Criar rede: `docker network create infra-network` (se não existir)
+
+**Produção - obrigatório:**
+- `JWT_SECRET`: mínimo 32 caracteres, não usar valores padrão
+- `CORS_ORIGINS`: origens permitidas separadas por vírgula (ex: `https://app.resolve.softwell.com.br`)
+- `NEXT_PUBLIC_API_URL`: URL pública da API para o frontend
 
 ## Variaveis de Ambiente
 
