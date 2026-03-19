@@ -36,6 +36,22 @@ class ChangePasswordDto {
   newPassword: string;
 }
 
+class AdminCreateUserDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(6)
+  password: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  role?: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
@@ -132,6 +148,21 @@ export class AuthController {
     this.requireAdmin(req);
     const active = await this.authService.toggleUserActive(id);
     return { message: active ? 'Usuário ativado.' : 'Usuário desativado.', active };
+  }
+
+  @Post('users')
+  @HttpCode(201)
+  @ApiOperation({ summary: 'Create user directly (admin only)' })
+  async createUser(@Request() req: any, @Body() body: AdminCreateUserDto) {
+    this.requireAdmin(req);
+    try {
+      const role = body.role || 'analyst';
+      const created = await this.authService.createUser(body.email, body.password, body.name, role);
+      this.logger.log(`User ${body.email} created by ${req.user.email}`);
+      return { message: 'Usuário criado com sucesso.', id: created._id };
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'Erro ao criar usuário');
+    }
   }
 
   private requireAdmin(req: any): void {
