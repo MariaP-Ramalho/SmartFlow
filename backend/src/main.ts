@@ -11,7 +11,7 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   app.useGlobalFilters(new HttpExceptionFilter(configService));
-  const port = configService.get<number>('port', 3001);
+  const port = configService.get<number>('port', 3003);
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
   const isProd = nodeEnv === 'production';
 
@@ -20,7 +20,7 @@ async function bootstrap() {
     ? corsOrigins.split(',').map((o) => o.trim()).filter(Boolean)
     : isProd
       ? []
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+      : ['http://localhost:3002', 'http://127.0.0.1:3002'];
 
   if (isProd && allowedOrigins.length === 0) {
     logger.warn('CORS_ORIGINS vazio em produção - defina as origens permitidas no .env');
