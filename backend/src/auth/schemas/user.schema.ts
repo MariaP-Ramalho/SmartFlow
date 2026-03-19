@@ -22,6 +22,9 @@ export class User {
 
   @Prop({ default: true })
   active: boolean;
+
+  @Prop({ default: false })
+  pendingApproval: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

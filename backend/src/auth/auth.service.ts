@@ -17,8 +17,15 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<UserDocument> {
-    const user = await this.userModel.findOne({ email: email.toLowerCase(), active: true });
+    const user = await this.userModel.findOne({ email: email.toLowerCase() });
     if (!user) throw new UnauthorizedException('Credenciais inválidas');
+
+    if (user.pendingApproval) {
+      throw new UnauthorizedException('Seu cadastro está aguardando aprovação de um administrador.');
+    }
+    if (!user.active) {
+      throw new UnauthorizedException('Conta desativada. Entre em contato com o administrador.');
+    }
 
     const hash = this.hashPassword(password, user.salt);
     if (hash !== user.passwordHash) throw new UnauthorizedException('Credenciais inválidas');
@@ -66,7 +73,13 @@ export class AuthService {
     }
   }
 
-  async createUser(email: string, password: string, name: string, role = 'analyst'): Promise<UserDocument> {
+  async createUser(
+    email: string,
+    password: string,
+    name: string,
+    role = 'analyst',
+    options: { pendingApproval?: boolean } = {},
+  ): Promise<UserDocument> {
     const existing = await this.userModel.findOne({ email: email.toLowerCase() });
     if (existing) throw new Error('Usuário já existe');
 
@@ -79,8 +92,61 @@ export class AuthService {
       role,
       salt,
       passwordHash,
-      active: true,
+      active: !options.pendingApproval,
+      pendingApproval: !!options.pendingApproval,
     });
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new UnauthorizedException('Usuário não encontrado');
+
+    const hash = this.hashPassword(currentPassword, user.salt);
+    if (hash !== user.passwordHash) throw new UnauthorizedException('Senha atual incorreta');
+
+    const newSalt = crypto.randomBytes(16).toString('hex');
+    const newHash = this.hashPassword(newPassword, newSalt);
+
+    user.salt = newSalt;
+    user.passwordHash = newHash;
+    await user.save();
+  }
+
+  async listUsers(): Promise<any[]> {
+    const users = await this.userModel.find().sort({ createdAt: -1 }).lean();
+    return users.map((u: any) => ({
+      id: u._id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      active: u.active,
+      pendingApproval: u.pendingApproval,
+      createdAt: u.createdAt,
+    }));
+  }
+
+  async approveUser(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new Error('Usuário não encontrado');
+    user.active = true;
+    user.pendingApproval = false;
+    await user.save();
+  }
+
+  async rejectUser(userId: string): Promise<void> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new Error('Usuário não encontrado');
+    user.active = false;
+    user.pendingApproval = false;
+    await user.save();
+  }
+
+  async toggleUserActive(userId: string): Promise<boolean> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new Error('Usuário não encontrado');
+    user.active = !user.active;
+    await user.save();
+    return user.active;
   }
 
   async seedDefaultUser(): Promise<void> {

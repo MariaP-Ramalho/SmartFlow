@@ -5,7 +5,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 
-const PUBLIC_ROUTES = ["/login"];
+const PUBLIC_ROUTES = ["/login", "/register"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
