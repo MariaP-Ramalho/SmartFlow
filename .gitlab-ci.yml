@@ -23,7 +23,7 @@ build-and-push:
     - docker push $DOCKER_IMAGE_BACKEND:latest
     - docker push $DOCKER_IMAGE_BACKEND:$VERSION
     # Frontend (NEXT_PUBLIC_API_URL definido em CI/CD Variables do GitLab)
-    - docker build --build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3001} -t $DOCKER_IMAGE_FRONTEND:latest -t $DOCKER_IMAGE_FRONTEND:$VERSION ./frontend
+    - docker build --build-arg NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3003} -t $DOCKER_IMAGE_FRONTEND:latest -t $DOCKER_IMAGE_FRONTEND:$VERSION ./frontend
     - docker push $DOCKER_IMAGE_FRONTEND:latest
     - docker push $DOCKER_IMAGE_FRONTEND:$VERSION
 
@@ -41,7 +41,7 @@ deploy:
     - |
       if [ ! -f /opt/apps/resolve/.env ]; then
         echo "WARN: /opt/apps/resolve/.env not found, creating from CI variables..."
-        echo "PORT=3001" > /opt/apps/resolve/.env
+        echo "PORT=3003" > /opt/apps/resolve/.env
         echo "MONGODB_URI=${MONGODB_URI}" >> /opt/apps/resolve/.env
         echo "JWT_SECRET=${JWT_SECRET}" >> /opt/apps/resolve/.env
         echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> /opt/apps/resolve/.env
