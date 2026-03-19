@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import api from "@/lib/api";
@@ -123,7 +124,17 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-slate-500">
+        <p className="mt-4 text-center text-sm text-slate-400">
+          Não tem conta?{" "}
+          <Link
+            href="/register"
+            className="font-medium text-blue-400 hover:text-blue-300"
+          >
+            Criar conta
+          </Link>
+        </p>
+
+        <p className="mt-4 text-center text-xs text-slate-500">
           Resolve-to-Close &copy; {new Date().getFullYear()}
         </p>
       </div>

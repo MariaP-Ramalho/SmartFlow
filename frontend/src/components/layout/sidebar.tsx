@@ -15,13 +15,17 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   CheckCircle2,
+  Settings,
+  Users,
 } from "lucide-react";
+import { useAuth } from "@/components/auth/auth-provider";
 import type { LucideIcon } from "lucide-react";
 
 interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -32,11 +36,18 @@ const navItems: NavItem[] = [
   { label: "Políticas", href: "/policies", icon: Shield },
   { label: "Aprovações", href: "/approvals", icon: CheckCircle },
   { label: "Base de Conhecimento", href: "/knowledge", icon: BookOpen },
+  { label: "Usuários", href: "/users", icon: Users, adminOnly: true },
+  { label: "Configurações", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { user } = useAuth();
+
+  const visibleItems = navItems.filter(
+    (item) => !item.adminOnly || user?.role === "admin",
+  );
 
   return (
     <aside
@@ -55,7 +66,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const isActive =
             item.href === "/"
               ? pathname === "/"
