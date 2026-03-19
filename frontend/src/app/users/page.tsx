@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import {
-  Users, UserCheck, UserX, ToggleLeft, ToggleRight,
-  Loader2, Clock, ShieldCheck, AlertCircle,
+  Users, UserCheck, UserX, UserPlus, ToggleLeft, ToggleRight,
+  Loader2, Clock, ShieldCheck, AlertCircle, X,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useRouter } from "next/navigation";
@@ -26,12 +26,18 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ name: "", email: "", password: "", role: "analyst" });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+
   const fetchUsers = useCallback(async () => {
     try {
       const res = await api.get("/auth/users");
       setUsers(res.data);
     } catch {
-      // redirect if not admin
+      // handled
     } finally {
       setLoading(false);
     }
@@ -54,6 +60,33 @@ export default function UsersPage() {
       // handled
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateError("");
+    setCreateSuccess("");
+
+    if (createForm.password.length < 6) {
+      setCreateError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    setCreateLoading(true);
+    try {
+      await api.post("/auth/users", createForm);
+      setCreateSuccess("Usuário criado com sucesso.");
+      setCreateForm({ name: "", email: "", password: "", role: "analyst" });
+      await fetchUsers();
+      setTimeout(() => {
+        setShowCreate(false);
+        setCreateSuccess("");
+      }, 1500);
+    } catch (err: any) {
+      setCreateError(err.response?.data?.message || "Erro ao criar usuário.");
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -83,10 +116,108 @@ export default function UsersPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <div className="flex items-center gap-3">
-        <Users className="h-6 w-6 text-slate-600" />
-        <h2 className="text-2xl font-bold text-slate-900">Gestão de Usuários</h2>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Users className="h-6 w-6 text-slate-600" />
+          <h2 className="text-2xl font-bold text-slate-900">Gestão de Usuários</h2>
+        </div>
+        <button
+          onClick={() => { setShowCreate(!showCreate); setCreateError(""); setCreateSuccess(""); }}
+          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+        >
+          <UserPlus className="h-4 w-4" />
+          Novo Usuário
+        </button>
       </div>
+
+      {/* Create User Form */}
+      {showCreate && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50/50 p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">Criar Novo Usuário</h3>
+            <button
+              onClick={() => setShowCreate(false)}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-white hover:text-slate-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {createError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700">
+              {createError}
+            </div>
+          )}
+          {createSuccess && (
+            <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-4 py-2.5 text-sm text-green-700">
+              {createSuccess}
+            </div>
+          )}
+
+          <form onSubmit={handleCreate} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Nome</label>
+              <input
+                type="text"
+                value={createForm.name}
+                onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                required
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="Nome completo"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Email</label>
+              <input
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                required
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="email@exemplo.com"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Senha</label>
+              <input
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                required
+                minLength={6}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Perfil</label>
+              <select
+                value={createForm.role}
+                onChange={(e) => setCreateForm({ ...createForm, role: e.target.value })}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              >
+                <option value="analyst">Analista</option>
+                <option value="viewer">Visualizador</option>
+                <option value="admin">Administrador</option>
+              </select>
+            </div>
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={createLoading}
+                className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+              >
+                {createLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                Criar Usuário
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* Pending Approvals */}
       {pending.length > 0 && (

@@ -1,473 +1,300 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
-  BookOpen,
-  HelpCircle,
-  FileText,
-  Archive,
-  Search,
-  Plus,
-  Pencil,
-  Trash2,
-  X,
+  Database, BookOpen, FileText, Search, Loader2,
+  CheckCircle2, AlertCircle, RefreshCw, ExternalLink,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-type DocumentSource = "faq" | "manual" | "past_ticket" | "internal_doc" | "pdf_upload";
-
-interface Document {
+interface KnowledgeSource {
   id: string;
-  title: string;
-  content: string;
-  category: string;
-  tags: string[];
-  source: DocumentSource;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
+  name: string;
+  type: "database" | "manual" | "document";
+  description: string;
+  status: "active" | "inactive" | "loading";
+  details: Record<string, any>;
 }
 
-const SOURCE_BADGE_VARIANT: Record<DocumentSource, "info" | "success" | "warning" | "default"> = {
-  faq: "info",
-  manual: "success",
-  past_ticket: "warning",
-  internal_doc: "default",
-  pdf_upload: "info",
+const TYPE_CONFIG: Record<string, { icon: typeof Database; color: string; bg: string; border: string }> = {
+  database: {
+    icon: Database,
+    color: "text-blue-600",
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+  },
+  manual: {
+    icon: BookOpen,
+    color: "text-emerald-600",
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+  },
+  document: {
+    icon: FileText,
+    color: "text-purple-600",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+  },
 };
-
-const SOURCE_LABELS: Record<DocumentSource, string> = {
-  faq: "FAQ",
-  manual: "Manual",
-  past_ticket: "Ticket Anterior",
-  internal_doc: "Doc. Interno",
-  pdf_upload: "PDF Upload",
-};
-
-const CATEGORIES = ["Geral", "Software", "Hardware", "Conta", "Cobranca"] as const;
-const SOURCES: DocumentSource[] = ["faq", "manual", "past_ticket", "internal_doc", "pdf_upload"];
-
-
-const emptyForm = {
-  title: "",
-  content: "",
-  category: "Geral",
-  source: "faq" as DocumentSource,
-  tags: "",
-};
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function KnowledgeBasePage() {
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [sources, setSources] = useState<KnowledgeSource[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
-  const [filterCategory, setFilterCategory] = useState("");
-  const [filterSource, setFilterSource] = useState("");
-  const [filterTags, setFilterTags] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[] | null>(null);
+  const [searching, setSearching] = useState(false);
 
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyForm);
-
-  const fetchDocuments = useCallback(async () => {
+  const fetchSources = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      setError("");
-      const { data: res } = await api.get("/knowledge");
-      setDocuments(res.data || res);
+      const { data } = await api.get("/zapflow/dashboard");
+
+      const zapflowSource: KnowledgeSource = {
+        id: "zapflow-mcp",
+        name: "ZapFlow - Banco de Atendimentos",
+        type: "database",
+        description: "Base de dados de produção do ZapFlow com histórico completo de atendimentos, interações, transcrições e resoluções.",
+        status: data.connected ? "active" : "inactive",
+        details: {
+          "Atendimentos Abertos": data.totalAbertos || 0,
+          "Total Fechados": data.totalFechados || 0,
+          "Analistas Ativos": data.tecnicosAtivos?.length || 0,
+          "Conexão": "MCP (Model Context Protocol)",
+          "Acesso": "Somente leitura",
+        },
+      };
+
+      const procedimentoSource: KnowledgeSource = {
+        id: "procedimento-atendimento",
+        name: "Procedimento de Atendimento ZapFlow 2026",
+        type: "document",
+        description: "Manual de procedimentos e fluxos de atendimento ao cliente. Define como o agente deve conduzir cada tipo de interação.",
+        status: "active",
+        details: {
+          "Tipo": "PDF ingerido no prompt do sistema",
+          "Atualizado": "Março 2026",
+          "Uso": "Orientação comportamental do agente",
+        },
+      };
+
+      const manuaisSource: KnowledgeSource = {
+        id: "manuais-sistemas",
+        name: "Manuais dos Sistemas",
+        type: "manual",
+        description: "Manuais técnicos e guias de usuário dos sistemas atendidos (Contabilidade Pública, Arrecadação Municipal, etc.). Em preparação para inclusão.",
+        status: "inactive",
+        details: {
+          "Status": "Pendente de inclusão",
+          "Previsão": "Em breve",
+          "Formato": "PDFs e documentos técnicos",
+        },
+      };
+
+      setSources([zapflowSource, procedimentoSource, manuaisSource]);
     } catch {
-      setError("Erro ao carregar documentos");
+      setSources([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchDocuments(); }, [fetchDocuments]);
+  useEffect(() => {
+    fetchSources();
+  }, [fetchSources]);
 
-  const filtered = useMemo(() => {
-    let list = documents;
-
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (d) =>
-          d.title.toLowerCase().includes(q) ||
-          d.content.toLowerCase().includes(q) ||
-          d.tags.some((t) => t.toLowerCase().includes(q))
-      );
-    }
-
-    if (filterCategory) {
-      list = list.filter((d) => d.category === filterCategory);
-    }
-
-    if (filterSource) {
-      list = list.filter((d) => d.source === filterSource);
-    }
-
-    if (filterTags) {
-      const tags = filterTags
-        .toLowerCase()
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-      if (tags.length > 0) {
-        list = list.filter((d) =>
-          tags.some((tag) => d.tags.some((dt) => dt.toLowerCase().includes(tag)))
-        );
-      }
-    }
-
-    return list;
-  }, [documents, search, filterCategory, filterSource, filterTags]);
-
-  const stats = useMemo(() => {
-    const total = documents.length;
-    const faqs = documents.filter((d) => d.source === "faq").length;
-    const manuals = documents.filter((d) => d.source === "manual").length;
-    const internal = documents.filter(
-      (d) => d.source === "internal_doc" || d.source === "past_ticket"
-    ).length;
-    return { total, faqs, manuals, internal };
-  }, [documents]);
-
-  function openAdd() {
-    setEditingId(null);
-    setForm(emptyForm);
-    setShowForm(true);
-  }
-
-  function openEdit(doc: Document) {
-    setEditingId(doc.id);
-    setForm({
-      title: doc.title,
-      content: doc.content,
-      category: doc.category,
-      source: doc.source,
-      tags: doc.tags.join(", "),
-    });
-    setShowForm(true);
-  }
-
-  async function handleSave() {
-    if (!form.title.trim() || !form.content.trim()) return;
-
-    const tags = form.tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchResults(null);
     try {
-      if (editingId) {
-        await api.patch(`/knowledge/${editingId}`, {
-          title: form.title,
-          content: form.content,
-          category: form.category,
-          source: form.source,
-          tags,
-        });
-      } else {
-        await api.post("/knowledge", {
-          title: form.title,
-          content: form.content,
-          category: form.category,
-          source: form.source,
-          tags,
-        });
-      }
-      setShowForm(false);
-      setEditingId(null);
-      setForm(emptyForm);
-      await fetchDocuments();
+      const { data } = await api.get(`/zapflow/atendimentos?search=${encodeURIComponent(searchQuery)}&limit=10`);
+      setSearchResults(data.data || data || []);
     } catch {
-      setError("Erro ao salvar documento");
+      setSearchResults([]);
+    } finally {
+      setSearching(false);
     }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      </div>
+    );
   }
 
-  async function handleDelete(id: string) {
-    try {
-      await api.delete(`/knowledge/${id}`);
-      await fetchDocuments();
-    } catch {
-      setError("Erro ao excluir documento");
-    }
-  }
-
-  function handleCancel() {
-    setShowForm(false);
-    setEditingId(null);
-    setForm(emptyForm);
-  }
+  const activeSources = sources.filter((s) => s.status === "active");
+  const inactiveSources = sources.filter((s) => s.status !== "active");
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold text-slate-900">Base de Conhecimento</h1>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Buscar documentos..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="h-9 rounded-lg border border-slate-300 bg-white pl-9 pr-4 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            />
-          </div>
-          <Button onClick={openAdd}>
-            <Plus className="h-4 w-4" />
-            Adicionar Documento
-          </Button>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Base de Conhecimento</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Fontes de dados que o agente consulta para resolver atendimentos
+          </p>
         </div>
+        <Button variant="outline" size="md" onClick={fetchSources}>
+          <RefreshCw className="h-4 w-4" />
+          Atualizar
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Stats */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
-              <BookOpen className="h-5 w-5 text-blue-600" />
+              <Database className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Total de Documentos</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-50">
-              <HelpCircle className="h-5 w-5 text-indigo-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">FAQs</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.faqs}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50">
-              <FileText className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500">Manuais</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.manuals}</p>
+              <p className="text-sm text-slate-500">Fontes Ativas</p>
+              <p className="text-2xl font-bold text-slate-900">{activeSources.length}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50">
-              <Archive className="h-5 w-5 text-amber-600" />
+              <AlertCircle className="h-5 w-5 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Artigos Internos</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.internal}</p>
+              <p className="text-sm text-slate-500">Pendentes</p>
+              <p className="text-2xl font-bold text-slate-900">{inactiveSources.length}</p>
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value="">Todas as Categorias</option>
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterSource}
-          onChange={(e) => setFilterSource(e.target.value)}
-          className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        >
-          <option value="">Todas as Fontes</option>
-          {SOURCES.map((s) => (
-            <option key={s} value={s}>
-              {SOURCE_LABELS[s]}
-            </option>
-          ))}
-        </select>
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Filtrar por tags (separadas por vírgula)"
-            value={filterTags}
-            onChange={(e) => setFilterTags(e.target.value)}
-            className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 sm:w-72"
-          />
-        </div>
-        {(filterCategory || filterSource || filterTags) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              setFilterCategory("");
-              setFilterSource("");
-              setFilterTags("");
-            }}
-          >
-            <X className="h-3.5 w-3.5" />
-            Limpar Filtros
-          </Button>
-        )}
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-      )}
-
-      {showForm && (
         <Card>
-          <CardHeader>
-            <CardTitle>{editingId ? "Editar Documento" : "Novo Documento"}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Título</label>
-                <input
-                  type="text"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Título do documento"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Conteúdo</label>
-                <textarea
-                  value={form.content}
-                  onChange={(e) => setForm({ ...form, content: e.target.value })}
-                  rows={6}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="Conteúdo do documento"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
-                <select
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-slate-700">Fonte</label>
-                <select
-                  value={form.source}
-                  onChange={(e) => setForm({ ...form, source: e.target.value as DocumentSource })}
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                >
-                  {SOURCES.filter((s) => s !== "pdf_upload").map((s) => (
-                    <option key={s} value={s}>
-                      {SOURCE_LABELS[s]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium text-slate-700">
-                  Tags (separadas por vírgula)
-                </label>
-                <input
-                  type="text"
-                  value={form.tags}
-                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  className="h-9 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                  placeholder="ex: senha, login, acesso"
-                />
-              </div>
-              <div className="flex gap-2 sm:col-span-2">
-                <Button onClick={handleSave}>Salvar</Button>
-                <Button variant="outline" onClick={handleCancel}>
-                  Cancelar
-                </Button>
-              </div>
+          <CardContent className="flex items-center gap-4 p-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50">
+              <BookOpen className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-sm text-slate-500">Total de Fontes</p>
+              <p className="text-2xl font-bold text-slate-900">{sources.length}</p>
             </div>
           </CardContent>
         </Card>
-      )}
+      </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <p className="text-slate-500">Carregando...</p>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 py-16">
-          <BookOpen className="mb-3 h-10 w-10 text-slate-300" />
-          <p className="text-sm font-medium text-slate-500">Nenhum documento encontrado</p>
-          <p className="text-xs text-slate-400">Tente ajustar os filtros ou adicione um novo documento</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((doc) => (
-            <Card key={doc.id} className="flex flex-col">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="line-clamp-1">{doc.title}</CardTitle>
-                  <div className="flex shrink-0 gap-1">
-                    <Button variant="ghost" size="sm" onClick={() => openEdit(doc)}>
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(doc.id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-red-500" />
-                    </Button>
+      {/* Sources */}
+      <div className="space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Fontes Configuradas</h2>
+        {sources.map((source) => {
+          const config = TYPE_CONFIG[source.type] || TYPE_CONFIG.database;
+          const Icon = config.icon;
+
+          return (
+            <Card key={source.id} className={source.status !== "active" ? "opacity-60" : ""}>
+              <CardContent className="p-5">
+                <div className="flex items-start gap-4">
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${config.bg}`}>
+                    <Icon className={`h-6 w-6 ${config.color}`} />
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-1 flex-col gap-3">
-                <p className="line-clamp-3 text-sm text-slate-600">
-                  {doc.content.length > 150 ? doc.content.slice(0, 150) + "…" : doc.content}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <Badge>{doc.category}</Badge>
-                  <Badge variant={SOURCE_BADGE_VARIANT[doc.source]}>
-                    {SOURCE_LABELS[doc.source]}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {doc.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-md bg-slate-50 px-1.5 py-0.5 text-xs text-slate-500"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                <div className="mt-auto border-t border-slate-100 pt-2 text-xs text-slate-400">
-                  <span>Criado: {formatDate(doc.createdAt)}</span>
-                  <span className="mx-2">·</span>
-                  <span>Atualizado: {formatDate(doc.updatedAt)}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1">
+                      <h3 className="text-base font-semibold text-slate-900">{source.name}</h3>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                          source.status === "active"
+                            ? "bg-green-50 text-green-700 border border-green-200"
+                            : "bg-slate-100 text-slate-500 border border-slate-200"
+                        }`}
+                      >
+                        {source.status === "active" ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : (
+                          <AlertCircle className="h-3 w-3" />
+                        )}
+                        {source.status === "active" ? "Ativa" : "Inativa"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-500 mb-3">{source.description}</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 sm:grid-cols-3">
+                      {Object.entries(source.details).map(([key, val]) => (
+                        <div key={key}>
+                          <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                            {key}
+                          </span>
+                          <p className="text-sm font-medium text-slate-700">{String(val)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+
+      {/* Search test */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Search className="h-4 w-4 text-blue-500" />
+            Testar Busca na Base
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-3 text-sm text-slate-500">
+            Pesquise por termos para verificar o que o agente encontra na base de atendimentos do ZapFlow.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="Ex: erro ao emitir nota fiscal, listagem de patrimônio..."
+              className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
+            <Button onClick={handleSearch} disabled={searching || !searchQuery.trim()}>
+              {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Buscar
+            </Button>
+          </div>
+
+          {searchResults !== null && (
+            <div className="mt-4">
+              {searchResults.length === 0 ? (
+                <p className="text-sm text-slate-400 py-4 text-center">Nenhum resultado encontrado</p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-slate-500 mb-2">
+                    {searchResults.length} resultado(s) encontrado(s)
+                  </p>
+                  {searchResults.map((r: any, i: number) => (
+                    <div
+                      key={i}
+                      className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-mono text-xs text-slate-400">
+                          #{r.z90_ate_id || r.id}
+                        </span>
+                        <span className="text-xs text-blue-600 font-medium">
+                          {r.sistema || "—"}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-700">
+                        {r.z90_ate_resumo_do_problema || r.resumo || "Sem descrição"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {r.cliente || "—"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Ticket, Users, Clock, AlertTriangle, RefreshCw, Monitor, Loader2 } from "lucide-react";
+import { Ticket, Users, Clock, AlertTriangle, RefreshCw, Monitor, Loader2, CheckCircle } from "lucide-react";
 import api from "@/lib/api";
 import {
   BarChart,
@@ -15,22 +15,17 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
-const STATUS_COLORS: Record<string, string> = {
-  "1": "#3b82f6",
-  "2": "#f59e0b",
-  "3": "#10b981",
-  "4": "#ef4444",
-  "5": "#8b5cf6",
-  "6": "#6b7280",
-};
-
-const PIE_COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899", "#6b7280"];
+const PIE_COLORS = [
+  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
+  "#06b6d4", "#ec4899", "#6b7280", "#14b8a6", "#f97316",
+];
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", {
@@ -39,6 +34,27 @@ function formatDate(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? text.slice(0, max) + "..." : text;
+}
+
+function CustomPieLegend({ payload }: any) {
+  if (!payload) return null;
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1.5 px-2">
+      {payload.map((entry: any, i: number) => (
+        <div key={i} className="flex items-center gap-2 min-w-0">
+          <span
+            className="h-2.5 w-2.5 shrink-0 rounded-sm"
+            style={{ backgroundColor: entry.color }}
+          />
+          <span className="truncate text-xs text-slate-600">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function DashboardPage() {
@@ -104,10 +120,15 @@ export default function DashboardPage() {
     value: parseInt(s.count, 10),
   }));
 
-  const tecnicosData = (data.tecnicosAtivos || []).map((t: any) => ({
-    name: t.z90_tec_nome,
-    atendimentos: parseInt(t.atendimentos_abertos, 10),
-  }));
+  const tecnicosData = (data.tecnicosAtivos || [])
+    .map((t: any) => ({
+      name: truncate(t.z90_tec_nome || "—", 18),
+      fullName: t.z90_tec_nome || "—",
+      atendimentos: parseInt(t.atendimentos_abertos, 10),
+    }))
+    .sort((a: any, b: any) => b.atendimentos - a.atendimentos);
+
+  const barHeight = Math.max(280, tecnicosData.length * 32);
 
   return (
     <div className="space-y-6">
@@ -125,29 +146,14 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
-          icon={Ticket}
-          label="Atendimentos Abertos"
-          value={data.totalAbertos}
-        />
-        <StatCard
-          icon={Clock}
-          label="Abertos Hoje"
-          value={data.totalHoje}
-        />
-        <StatCard
-          icon={AlertTriangle}
-          label="Total Fechados"
-          value={data.totalFechados}
-        />
-        <StatCard
-          icon={Users}
-          label="Analistas Ativos"
-          value={data.tecnicosAtivos?.length || 0}
-        />
+        <StatCard icon={Ticket} label="Atendimentos Abertos" value={data.totalAbertos} />
+        <StatCard icon={Clock} label="Abertos Hoje" value={data.totalHoje} />
+        <StatCard icon={CheckCircle} label="Total Fechados" value={data.totalFechados} />
+        <StatCard icon={Users} label="Analistas Ativos" value={data.tecnicosAtivos?.length || 0} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        {/* Pie Chart */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -159,31 +165,42 @@ export default function DashboardPage() {
             {porSistema.length === 0 ? (
               <p className="text-center text-sm text-slate-400 py-8">Nenhum atendimento aberto</p>
             ) : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={porSistema}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={2}
-                      dataKey="value"
-                      label={({ name, value }) => `${name} (${value})`}
-                    >
-                      {porSistema.map((_: any, i: number) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={porSistema}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={55}
+                        outerRadius={95}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        {porSistema.map((_: any, i: number) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: number, name: string) => [`${value} atendimentos`, name]}
+                        contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <CustomPieLegend
+                  payload={porSistema.map((s: any, i: number) => ({
+                    value: `${s.name} (${s.value})`,
+                    color: PIE_COLORS[i % PIE_COLORS.length],
+                  }))}
+                />
               </div>
             )}
           </CardContent>
         </Card>
 
+        {/* Bar Chart */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -195,14 +212,43 @@ export default function DashboardPage() {
             {tecnicosData.length === 0 ? (
               <p className="text-center text-sm text-slate-400 py-8">Nenhum analista ativo</p>
             ) : (
-              <div className="h-72">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={tecnicosData} layout="vertical" margin={{ top: 4, right: 20, bottom: 0, left: 80 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: "#64748b" }} axisLine={false} tickLine={false} width={80} />
-                    <Tooltip contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" }} />
-                    <Bar dataKey="atendimentos" name="Atendimentos Abertos" fill="#10b981" radius={[0, 6, 6, 0]} barSize={20} />
+              <div style={{ height: barHeight }} className="max-h-[500px] overflow-y-auto">
+                <ResponsiveContainer width="100%" height={barHeight}>
+                  <BarChart
+                    data={tecnicosData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 24, bottom: 0, left: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 12, fill: "#64748b" }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: "#475569" }}
+                      axisLine={false}
+                      tickLine={false}
+                      width={130}
+                    />
+                    <Tooltip
+                      formatter={(value: number) => [`${value} atendimentos`]}
+                      labelFormatter={(label: string) => {
+                        const item = tecnicosData.find((t: any) => t.name === label);
+                        return item?.fullName || label;
+                      }}
+                      contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" }}
+                    />
+                    <Bar
+                      dataKey="atendimentos"
+                      name="Abertos"
+                      fill="#10b981"
+                      radius={[0, 6, 6, 0]}
+                      barSize={18}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -211,6 +257,7 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Recent table */}
       <Card>
         <CardHeader>
           <CardTitle>Atendimentos Recentes</CardTitle>
@@ -220,12 +267,12 @@ export default function DashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="px-3 py-2 text-left font-medium text-slate-500">ID</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-500 whitespace-nowrap">ID</th>
                   <th className="px-3 py-2 text-left font-medium text-slate-500">Cliente</th>
-                  <th className="px-3 py-2 text-left font-medium text-slate-500">Sistema</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-500 whitespace-nowrap">Sistema</th>
                   <th className="px-3 py-2 text-left font-medium text-slate-500">Problema</th>
-                  <th className="px-3 py-2 text-left font-medium text-slate-500">Data</th>
-                  <th className="px-3 py-2 text-left font-medium text-slate-500">Status</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-500 whitespace-nowrap">Data</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-500 whitespace-nowrap">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -235,26 +282,36 @@ export default function DashboardPage() {
                     className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition-colors"
                     onClick={() => router.push(`/tickets/zf-${a.z90_ate_id}`)}
                   >
-                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
-                    <td className="px-3 py-2.5 text-slate-700">{a.cliente || "—"}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 font-mono text-xs text-slate-500 whitespace-nowrap">
+                      #{a.z90_ate_id}
+                    </td>
+                    <td className="px-3 py-2.5 text-slate-700 max-w-[200px] truncate">
+                      {a.cliente || "—"}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <Badge variant="info">{a.sistema || "—"}</Badge>
                     </td>
-                    <td className="px-3 py-2.5 max-w-xs truncate text-slate-600">
+                    <td className="px-3 py-2.5 max-w-[250px] truncate text-slate-600">
                       {a.z90_ate_resumo_do_problema || "Sem descrição"}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-400">
+                    <td className="px-3 py-2.5 text-xs text-slate-400 whitespace-nowrap">
                       {a.z90_ate_data_abertura ? formatDate(a.z90_ate_data_abertura) : "—"}
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        a.z90_ate_id_status_atendimento === 1 ? "bg-blue-100 text-blue-700" :
-                        a.z90_ate_id_status_atendimento === 3 ? "bg-emerald-100 text-emerald-700" :
-                        "bg-amber-100 text-amber-700"
-                      }`}>
-                        {a.z90_ate_id_status_atendimento === 1 ? "Aberto" :
-                         a.z90_ate_id_status_atendimento === 3 ? "Fechado" :
-                         `Status ${a.z90_ate_id_status_atendimento}`}
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                          a.z90_ate_id_status_atendimento === 1
+                            ? "bg-blue-100 text-blue-700"
+                            : a.z90_ate_id_status_atendimento === 3
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {a.z90_ate_id_status_atendimento === 1
+                          ? "Aberto"
+                          : a.z90_ate_id_status_atendimento === 3
+                          ? "Fechado"
+                          : `Status ${a.z90_ate_id_status_atendimento}`}
                       </span>
                     </td>
                   </tr>
