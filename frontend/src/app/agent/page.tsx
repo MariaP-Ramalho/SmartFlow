@@ -20,9 +20,14 @@ import {
   ArrowLeft,
   Calendar,
   Hash,
+  Settings,
+  Save,
+  RotateCw,
+  Check,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/auth-provider";
 
 interface ReasoningStep {
   type: "thinking" | "tool_call" | "tool_result" | "knowledge_hit" | "llm_response" | "phase_change" | "error";
@@ -172,8 +177,21 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+interface AgentConfigData {
+  systemPrompt: string;
+  bufferDelayMs: number;
+  chatModel: string;
+  maxAttempts: number;
+  maxToolIterations: number;
+  agentDisplayName: string;
+  customInstructions: string;
+  updatedAt?: string;
+}
+
 export default function AgentPage() {
-  const [tab, setTab] = useState<"chat" | "history">("chat");
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [tab, setTab] = useState<"chat" | "history" | "config">("chat");
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -197,6 +215,58 @@ export default function AgentPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
 
+  // Config state
+  const [agentConfig, setAgentConfig] = useState<AgentConfigData | null>(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+  const [configSuccess, setConfigSuccess] = useState("");
+  const [configError, setConfigError] = useState("");
+
+  const loadConfig = useCallback(async () => {
+    setConfigLoading(true);
+    setConfigError("");
+    try {
+      const { data } = await api.get("/agent/chat/config");
+      setAgentConfig(data);
+    } catch {
+      setConfigError("Erro ao carregar configurações.");
+    } finally {
+      setConfigLoading(false);
+    }
+  }, []);
+
+  const saveConfig = async () => {
+    if (!agentConfig) return;
+    setConfigSaving(true);
+    setConfigSuccess("");
+    setConfigError("");
+    try {
+      await api.patch("/agent/chat/config", agentConfig);
+      setConfigSuccess("Configurações salvas com sucesso.");
+      setTimeout(() => setConfigSuccess(""), 3000);
+    } catch {
+      setConfigError("Erro ao salvar configurações.");
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const resetConfig = async () => {
+    setConfigSaving(true);
+    setConfigSuccess("");
+    setConfigError("");
+    try {
+      await api.post("/agent/chat/config/reset");
+      await loadConfig();
+      setConfigSuccess("Configurações resetadas para o padrão.");
+      setTimeout(() => setConfigSuccess(""), 3000);
+    } catch {
+      setConfigError("Erro ao resetar configurações.");
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -205,7 +275,10 @@ export default function AgentPage() {
     if (tab === "history") {
       loadHistory(1);
     }
-  }, [tab]);
+    if (tab === "config" && isAdmin) {
+      loadConfig();
+    }
+  }, [tab, isAdmin, loadConfig]);
 
   const loadHistory = async (page: number) => {
     setHistoryLoading(true);
@@ -377,6 +450,19 @@ export default function AgentPage() {
           <History className="h-4 w-4" />
           Histórico
         </button>
+        {isAdmin && (
+          <button
+            onClick={() => setTab("config")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === "config"
+                ? "bg-blue-50 text-blue-700"
+                : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            <Settings className="h-4 w-4" />
+            Configurações
+          </button>
+        )}
       </div>
 
       {tab === "chat" && (
@@ -791,6 +877,212 @@ export default function AgentPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Config Tab */}
+      {tab === "config" && isAdmin && (
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <Settings className="h-6 w-6 text-slate-600" />
+                  Configurações do Agente
+                </h1>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Ajuste o comportamento, personalidade e parâmetros do agente
+                </p>
+              </div>
+            </div>
+
+            {configLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
+              </div>
+            ) : !agentConfig ? (
+              <div className="text-center py-16 text-slate-400">
+                <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+                <p>Não foi possível carregar as configurações.</p>
+              </div>
+            ) : (
+              <>
+                {configError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {configError}
+                  </div>
+                )}
+                {configSuccess && (
+                  <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                    <Check className="h-4 w-4" />
+                    {configSuccess}
+                  </div>
+                )}
+
+                {/* Parameters */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <h3 className="text-base font-semibold text-slate-900 mb-4">Parâmetros Gerais</h3>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Nome do Agente
+                      </label>
+                      <input
+                        type="text"
+                        value={agentConfig.agentDisplayName}
+                        onChange={(e) =>
+                          setAgentConfig({ ...agentConfig, agentDisplayName: e.target.value })
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Nome exibido nas mensagens espelhadas
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Delay de Buffer (ms)
+                      </label>
+                      <input
+                        type="number"
+                        value={agentConfig.bufferDelayMs}
+                        onChange={(e) =>
+                          setAgentConfig({ ...agentConfig, bufferDelayMs: parseInt(e.target.value) || 0 })
+                        }
+                        min={0}
+                        max={30000}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Tempo de espera antes de processar (concatena mensagens)
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Modelo LLM
+                      </label>
+                      <input
+                        type="text"
+                        value={agentConfig.chatModel}
+                        onChange={(e) =>
+                          setAgentConfig({ ...agentConfig, chatModel: e.target.value })
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Ex: gpt-4o, gpt-5.2, claude-3-opus
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Máximo de Tentativas
+                      </label>
+                      <input
+                        type="number"
+                        value={agentConfig.maxAttempts}
+                        onChange={(e) =>
+                          setAgentConfig({ ...agentConfig, maxAttempts: parseInt(e.target.value) || 3 })
+                        }
+                        min={1}
+                        max={10}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Tentativas antes de escalar para analista humano
+                      </p>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-slate-700">
+                        Máximo de Iterações (Tools)
+                      </label>
+                      <input
+                        type="number"
+                        value={agentConfig.maxToolIterations}
+                        onChange={(e) =>
+                          setAgentConfig({ ...agentConfig, maxToolIterations: parseInt(e.target.value) || 5 })
+                        }
+                        min={1}
+                        max={20}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Ciclos de raciocínio + tools por mensagem
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom Instructions */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <h3 className="text-base font-semibold text-slate-900 mb-1">
+                    Instruções Adicionais
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Instruções extras que serão adicionadas ao final do prompt. Use para ajustes rápidos sem alterar o prompt principal.
+                  </p>
+                  <textarea
+                    value={agentConfig.customInstructions}
+                    onChange={(e) =>
+                      setAgentConfig({ ...agentConfig, customInstructions: e.target.value })
+                    }
+                    rows={4}
+                    placeholder="Ex: Sempre pergunte o nome do município antes de sugerir soluções."
+                    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+
+                {/* System Prompt */}
+                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Prompt do Sistema
+                    </h3>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {agentConfig.systemPrompt.length} caracteres
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 mb-3">
+                    Prompt principal que define a personalidade e comportamento do agente. Variáveis disponíveis:{" "}
+                    <code className="text-[11px] bg-slate-100 px-1 rounded">{"{{systemName}}"}</code>,{" "}
+                    <code className="text-[11px] bg-slate-100 px-1 rounded">{"{{customerName}}"}</code>,{" "}
+                    <code className="text-[11px] bg-slate-100 px-1 rounded">{"{{attemptCount}}"}</code>
+                  </p>
+                  <textarea
+                    value={agentConfig.systemPrompt}
+                    onChange={(e) =>
+                      setAgentConfig({ ...agentConfig, systemPrompt: e.target.value })
+                    }
+                    rows={20}
+                    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono leading-relaxed"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pb-4">
+                  <button
+                    onClick={resetConfig}
+                    disabled={configSaving}
+                    className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    <RotateCw className="h-4 w-4" />
+                    Resetar para Padrão
+                  </button>
+                  <button
+                    onClick={saveConfig}
+                    disabled={configSaving}
+                    className="flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {configSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Save className="h-4 w-4" />
+                    )}
+                    Salvar Configurações
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
