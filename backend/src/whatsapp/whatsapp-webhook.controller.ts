@@ -4,6 +4,7 @@ import { Response } from 'express';
 import { Public } from '../auth/auth.guard';
 import { UazapiService } from './uazapi.service';
 import { ChatService } from '../agent/chat.service';
+import { AgentConfigService } from '../agent/agent-config.service';
 
 interface UazapiWebhookPayload {
   event?: string;
@@ -52,6 +53,7 @@ export class WhatsAppWebhookController {
     private readonly uazapi: UazapiService,
     private readonly chatService: ChatService,
     private readonly config: ConfigService,
+    private readonly agentConfig: AgentConfigService,
   ) {
     this.managerPhone = this.config.get<string>('MANAGER_WHATSAPP', '');
     this.agentName = this.config.get<string>('AGENT_DISPLAY_NAME', 'Renato Solves');
@@ -134,7 +136,10 @@ export class WhatsAppWebhookController {
     };
   }
 
-  private bufferMessage(phoneNumber: string, senderName: string, text: string) {
+  private async bufferMessage(phoneNumber: string, senderName: string, text: string) {
+    const config = await this.agentConfig.getConfig();
+    const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
+
     const existing = this.messageBuffer.get(phoneNumber);
 
     if (existing) {
@@ -142,12 +147,12 @@ export class WhatsAppWebhookController {
       clearTimeout(existing.timer);
       existing.timer = setTimeout(
         () => this.flushAndProcess(phoneNumber),
-        this.BUFFER_DELAY_MS,
+        delay,
       );
     } else {
       const timer = setTimeout(
         () => this.flushAndProcess(phoneNumber),
-        this.BUFFER_DELAY_MS,
+        delay,
       );
       this.messageBuffer.set(phoneNumber, { texts: [text], name: senderName, timer });
     }
@@ -200,7 +205,9 @@ export class WhatsAppWebhookController {
           await this.uazapi.sendText(phoneNumber, paragraphs[i]);
         }
 
-        this.mirrorToManager(`*${this.agentName}*: ${response.reply}`);
+        const cfg = await this.agentConfig.getConfig();
+        const displayName = cfg?.agentDisplayName || this.agentName;
+        this.mirrorToManager(`*${displayName}*: ${response.reply}`);
       }
 
       this.logger.log(

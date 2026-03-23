@@ -6,10 +6,10 @@ import { LlmService } from './llm/llm.service';
 import { LLMMessage } from './llm/llm.interface';
 import { ToolRegistry } from './tools/tool-registry';
 import { AgentContext, ToolResult } from './tools/tool.interface';
-import { buildAgentSystemPrompt } from './system-prompt';
+import { AgentConfigService } from './agent-config.service';
 import { ChatSession as ChatSessionDoc, ChatSessionDocument } from './schemas/chat-session.schema';
 
-const MAX_TOOL_ITERATIONS = 5;
+let MAX_TOOL_ITERATIONS = 5;
 
 export interface ReasoningStep {
   type: 'thinking' | 'tool_call' | 'tool_result' | 'knowledge_hit' | 'llm_response' | 'phase_change' | 'error';
@@ -54,6 +54,7 @@ export class ChatService {
   constructor(
     private readonly llm: LlmService,
     private readonly toolRegistry: ToolRegistry,
+    private readonly agentConfig: AgentConfigService,
     @InjectModel(ChatSessionDoc.name) private readonly chatSessionModel: Model<ChatSessionDocument>,
   ) {}
 
@@ -85,7 +86,10 @@ export class ChatService {
 
     session.conversationHistory.push({ role: 'customer', content: input.message });
 
-    const systemPrompt = buildAgentSystemPrompt({
+    const config = await this.agentConfig.getConfig();
+    MAX_TOOL_ITERATIONS = config?.maxToolIterations || 5;
+
+    const systemPrompt = this.agentConfig.buildPromptForSession({
       systemName: session.systemName,
       customerName: session.customerName,
       customerPhone: '',

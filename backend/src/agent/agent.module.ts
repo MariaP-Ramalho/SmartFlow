@@ -5,6 +5,7 @@ import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { PoliciesModule } from '../policies/policies.module';
 import { ZapFlowPgModule } from '../zapflow/zapflow-pg.module';
 import { ChatSession, ChatSessionSchema } from './schemas/chat-session.schema';
+import { AgentConfig, AgentConfigSchema } from './schemas/agent-config.schema';
 import { ToolRegistry } from './tools/tool-registry';
 import { TicketTool } from './tools/ticket.tool';
 import { KnowledgeTool } from './tools/knowledge.tool';
@@ -18,11 +19,15 @@ import { ConversationService } from './conversation.service';
 import { WebhookController } from './webhook.controller';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { AgentConfigService } from './agent-config.service';
 import { DailyReportService } from './daily-report.service';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: ChatSession.name, schema: ChatSessionSchema }]),
+    MongooseModule.forFeature([
+      { name: ChatSession.name, schema: ChatSessionSchema },
+      { name: AgentConfig.name, schema: AgentConfigSchema },
+    ]),
     TicketsModule, KnowledgeModule, PoliciesModule, ZapFlowPgModule,
   ],
   controllers: [AgentController, WebhookController, ChatController],
@@ -37,9 +42,10 @@ import { DailyReportService } from './daily-report.service';
     AgentService,
     ConversationService,
     ChatService,
+    AgentConfigService,
     DailyReportService,
   ],
-  exports: [AgentService, ConversationService, ChatService],
+  exports: [AgentService, ConversationService, ChatService, AgentConfigService],
 })
 export class AgentModule implements OnModuleInit {
   constructor(
