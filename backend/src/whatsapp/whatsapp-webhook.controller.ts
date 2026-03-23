@@ -389,8 +389,19 @@ export class WhatsAppWebhookController {
       const displayName = cfg?.agentDisplayName || this.agentName;
       this.mirrorToManager(`*${displayName}*: ${response.reply}`);
 
+      if (response.managerNotifications?.length > 0) {
+        for (const notif of response.managerNotifications) {
+          const notifMsg =
+            `[${this.reasonLabel(notif.reason)}]\n` +
+            `Cliente: *${buffered.name}* (${phoneNumber})\n` +
+            `${notif.message}` +
+            (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
+          this.mirrorToManager(notifMsg);
+        }
+      }
+
       this.logger.log(
-        `Reply sent to ${phoneNumber}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Duration: ${response.totalDurationMs}ms`,
+        `Reply sent to ${phoneNumber}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
       );
     } catch (err) {
       this.logger.error(
@@ -415,6 +426,19 @@ export class WhatsAppWebhookController {
     this.uazapi.sendText(this.managerPhone, msg).catch((err) => {
       this.logger.error(`CRITICAL: Failed to escalate to manager: ${err}`);
     });
+  }
+
+  private reasonLabel(reason: string): string {
+    const labels: Record<string, string> = {
+      escalation_needed: 'ESCALAÇÃO',
+      possible_bug: 'POSSÍVEL BUG',
+      cannot_handle: 'NÃO CONSIGO RESOLVER',
+      needs_system_access: 'PRECISA ACESSO AO SISTEMA',
+      client_requested_human: 'CLIENTE PEDIU HUMANO',
+      max_attempts_reached: 'MÁXIMO DE TENTATIVAS',
+      other: 'NOTIFICAÇÃO',
+    };
+    return labels[reason] || 'NOTIFICAÇÃO AGENTE';
   }
 
   private mirrorToManager(text: string): void {

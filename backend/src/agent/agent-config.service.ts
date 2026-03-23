@@ -16,23 +16,28 @@ export class AgentConfigService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    const defaultPrompt = buildAgentSystemPrompt({
+      systemName: '{{systemName}}',
+      customerName: '{{customerName}}',
+      customerPhone: '{{customerPhone}}',
+      entityName: '{{entityName}}',
+      previousMessagesCount: 0,
+      attemptCount: 0,
+    });
+
     const existing = await this.model.findOne({ configId: CONFIG_ID });
     if (!existing) {
-      const defaultPrompt = buildAgentSystemPrompt({
-        systemName: '{{systemName}}',
-        customerName: '{{customerName}}',
-        customerPhone: '{{customerPhone}}',
-        entityName: '{{entityName}}',
-        previousMessagesCount: 0,
-        attemptCount: 0,
-      });
-
       await this.model.create({
         configId: CONFIG_ID,
         systemPrompt: defaultPrompt,
       });
-
       this.logger.log('Default agent config created in database');
+    } else {
+      await this.model.updateOne(
+        { configId: CONFIG_ID },
+        { $set: { systemPrompt: defaultPrompt } },
+      );
+      this.logger.log('Agent config system prompt updated to latest default');
     }
 
     this.cachedConfig = await this.model.findOne({ configId: CONFIG_ID });
