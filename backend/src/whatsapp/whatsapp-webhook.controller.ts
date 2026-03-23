@@ -48,6 +48,7 @@ export class WhatsAppWebhookController {
   private readonly processingLock = new Set<string>();
   private readonly managerPhone: string;
   private readonly agentName: string;
+  private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
 
   constructor(
     private readonly uazapi: UazapiService,
@@ -69,6 +70,14 @@ export class WhatsAppWebhookController {
     };
   }
 
+  @Get('debug-payloads')
+  debugPayloads() {
+    return {
+      count: this.recentPayloads.length,
+      payloads: this.recentPayloads,
+    };
+  }
+
   @Post()
   @HttpCode(200)
   async handleWebhook(@Body() body: UazapiWebhookPayload, @Res() res: Response) {
@@ -76,10 +85,18 @@ export class WhatsAppWebhookController {
 
     try {
       this.logger.debug(`Raw webhook payload: ${JSON.stringify(body).slice(0, 500)}`);
-      const { phone, name, text, messageId, remoteJid } = this.parsePayload(body);
+      const parsed = this.parsePayload(body);
+      const { phone, name, text, messageId, remoteJid } = parsed;
+
+      this.recentPayloads.push({
+        ts: new Date().toISOString(),
+        payload: JSON.parse(JSON.stringify(body)),
+        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid },
+      });
+      if (this.recentPayloads.length > 20) this.recentPayloads.shift();
 
       if (!phone || !text) {
-        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}`);
+        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
         return;
       }
 
