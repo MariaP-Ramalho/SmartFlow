@@ -28,9 +28,9 @@ export class UazapiService implements OnModuleInit {
       baseURL: cleanBase,
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.instanceToken}`,
+        token: this.instanceToken,
       },
-      timeout: 15000,
+      timeout: 30000,
     });
 
     this.logger.log(`Uazapi connected: ${cleanBase}`);
@@ -50,7 +50,7 @@ export class UazapiService implements OnModuleInit {
     const fullNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
 
     try {
-      await this.http.post('/sendText', {
+      await this.http.post('/send/text', {
         number: fullNumber,
         text: message,
       });
@@ -67,7 +67,7 @@ export class UazapiService implements OnModuleInit {
   async markAsRead(remoteJid: string, messageId: string): Promise<void> {
     if (!this.http) return;
     try {
-      await this.http.post('/markAsRead', {
+      await this.http.post('/mark/read', {
         remoteJid,
         messageId,
       });
@@ -81,7 +81,7 @@ export class UazapiService implements OnModuleInit {
     const cleanNumber = number.replace(/\D/g, '');
     const fullNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
     try {
-      await this.http.post('/sendPresence', {
+      await this.http.post('/send/presence', {
         number: fullNumber,
         presence: 'composing',
         delay: durationMs,
