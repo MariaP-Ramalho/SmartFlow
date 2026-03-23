@@ -7,20 +7,44 @@ import { ChatService } from '../agent/chat.service';
 import { AgentConfigService } from '../agent/agent-config.service';
 
 interface UazapiWebhookPayload {
+  // Uazapi v2 format (production)
+  EventType?: string;
+  owner?: string;
+  token?: string;
+  instanceName?: string;
+  chatSource?: string;
+  chat?: {
+    phone?: string;
+    wa_name?: string;
+    wa_chatid?: string;
+    owner?: string;
+    [key: string]: any;
+  };
+  message?: {
+    text?: string;
+    content?: string;
+    chatid?: string;
+    chatlid?: string;
+    fromMe?: boolean;
+    messageid?: string;
+    senderName?: string;
+    sender?: string;
+    sender_pn?: string;
+    messageType?: string;
+    messageTimestamp?: number;
+    isGroup?: boolean;
+    wasSentByApi?: boolean;
+    type?: string;
+    [key: string]: any;
+  };
+  // Legacy nested format
   event?: string;
-  instance?: string;
   data?: {
-    key?: {
-      remoteJid?: string;
-      fromMe?: boolean;
-      id?: string;
-    };
+    key?: { remoteJid?: string; fromMe?: boolean; id?: string };
     pushName?: string;
     message?: {
       conversation?: string;
-      extendedTextMessage?: {
-        text?: string;
-      };
+      extendedTextMessage?: { text?: string };
       imageMessage?: { caption?: string };
       videoMessage?: { caption?: string };
       documentMessage?: { caption?: string };
@@ -28,7 +52,7 @@ interface UazapiWebhookPayload {
     messageType?: string;
     messageTimestamp?: number;
   };
-  // Alternative flat format some Uazapi versions use
+  // Legacy flat format
   remoteJid?: string;
   fromMe?: boolean;
   pushName?: string;
@@ -205,6 +229,35 @@ export class WhatsAppWebhookController {
   } {
     const empty = { phone: null, name: '', text: null, messageId: null, remoteJid: null };
 
+    // Uazapi v2 format (EventType + message object)
+    if (body.EventType && body.message) {
+      if (body.message.fromMe || body.message.wasSentByApi || body.message.isGroup) return empty;
+
+      const text = body.message.text || body.message.content || null;
+      if (!text) return empty;
+
+      const phone =
+        body.chat?.phone ||
+        (body.message.sender_pn ? this.jidToPhone(body.message.sender_pn) : null) ||
+        (body.message.chatid ? this.jidToPhone(body.message.chatid) : null);
+
+      if (!phone) return empty;
+
+      const name =
+        body.message.senderName ||
+        body.chat?.wa_name ||
+        phone;
+
+      return {
+        phone,
+        name,
+        text,
+        messageId: body.message.messageid || null,
+        remoteJid: body.message.chatid || null,
+      };
+    }
+
+    // Legacy flat format
     if (body.body && body.remoteJid && !body.fromMe) {
       const phone = this.jidToPhone(body.remoteJid);
       return {
@@ -216,6 +269,7 @@ export class WhatsAppWebhookController {
       };
     }
 
+    // Legacy nested format
     const isMessageEvent =
       body.event === 'messages' ||
       body.event === 'messages.upsert' ||
