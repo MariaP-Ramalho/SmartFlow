@@ -88,6 +88,7 @@ export class ChatService {
 
     const config = await this.agentConfig.getConfig();
     MAX_TOOL_ITERATIONS = config?.maxToolIterations || 5;
+    const chatModel = config?.chatModel || undefined;
 
     const systemPrompt = this.agentConfig.buildPromptForSession({
       systemName: session.systemName,
@@ -116,6 +117,7 @@ export class ChatService {
       },
     });
 
+    const isWhatsApp = input.sessionId?.startsWith('wa-') ?? false;
     const context: AgentContext = {
       caseId: `chat-${session.id}`,
       ticketId: undefined,
@@ -123,7 +125,7 @@ export class ChatService {
       metadata: {
         systemName: session.systemName,
         customerName: session.customerName,
-        isTestChat: true,
+        isTestChat: !isWhatsApp,
       },
     };
 
@@ -131,6 +133,7 @@ export class ChatService {
       session.messages,
       context,
       steps,
+      chatModel,
     );
 
     session.conversationHistory.push({ role: 'agent', content: reply });
@@ -166,6 +169,7 @@ export class ChatService {
     messages: LLMMessage[],
     context: AgentContext,
     steps: ReasoningStep[],
+    model?: string,
   ): Promise<{
     reply: string;
     toolsUsed: string[];
@@ -196,7 +200,7 @@ export class ChatService {
 
       let response;
       try {
-        response = await this.llm.chat(messages, { tools: toolDefinitions });
+        response = await this.llm.chat(messages, { tools: toolDefinitions, model });
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         this.logger.error(`All LLM providers failed: ${errMsg}`);

@@ -344,10 +344,10 @@ export default function AgentPage() {
         durationMs: data.totalDurationMs,
       };
 
-      setMessages((prev) => [...prev, agentMsg]);
-      setSelectedMsg((prev) => {
-        const newLen = messages.length + messageBuffer.current.length + 1;
-        return newLen;
+      setMessages((prev) => {
+        const updated = [...prev, agentMsg];
+        setSelectedMsg(updated.length - 1);
+        return updated;
       });
     } catch (err) {
       const errorMsg: ChatMessage = {

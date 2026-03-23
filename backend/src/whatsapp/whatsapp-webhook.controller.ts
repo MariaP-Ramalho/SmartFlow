@@ -273,6 +273,7 @@ export class WhatsAppWebhookController {
           .map((p) => p.trim())
           .filter(Boolean);
 
+        let anySendFailed = false;
         for (let i = 0; i < paragraphs.length; i++) {
           if (i > 0) {
             await this.delay(1500);
@@ -281,6 +282,12 @@ export class WhatsAppWebhookController {
           }
           const sent = await this.uazapi.sendText(phoneNumber, paragraphs[i]);
           this.logger.log(`sendText to ${phoneNumber} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+          if (!sent) anySendFailed = true;
+        }
+
+        if (anySendFailed && paragraphs.length > 0) {
+          this.logger.warn(`Some message parts failed to send to ${phoneNumber}, retrying as single message`);
+          await this.uazapi.sendText(phoneNumber, response.reply);
         }
 
         const cfg = await this.agentConfig.getConfig();
