@@ -30,15 +30,18 @@ export class LlmService implements OnModuleInit {
       'text-embedding-3-small',
     );
 
+    const isPlaceholder = (key: string | undefined): boolean =>
+      !key || key.startsWith('your-') || key === 'sk-xxx' || key.length < 10;
+
     const openaiKey = this.configService.get<string>('llm.openai.apiKey');
-    if (openaiKey) {
+    if (openaiKey && !isPlaceholder(openaiKey)) {
       const provider = new OpenAIProvider(openaiKey, chatModel, embeddingModel);
       this.providers.set('openai', provider);
       this.logger.log('OpenAI provider initialized');
     }
 
     const anthropicKey = this.configService.get<string>('llm.anthropic.apiKey');
-    if (anthropicKey) {
+    if (anthropicKey && !isPlaceholder(anthropicKey)) {
       const provider = new AnthropicProvider(anthropicKey);
       this.providers.set('anthropic', provider);
       this.logger.log('Anthropic provider initialized');
@@ -49,7 +52,7 @@ export class LlmService implements OnModuleInit {
     const azureDeployment = this.configService.get<string>(
       'llm.azure.deployment',
     );
-    if (azureKey && azureEndpoint && azureDeployment) {
+    if (azureKey && !isPlaceholder(azureKey) && azureEndpoint && azureDeployment) {
       const provider = new AzureOpenAIProvider(
         azureKey,
         azureEndpoint,
