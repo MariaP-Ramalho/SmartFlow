@@ -29,6 +29,7 @@ export interface ChatInput {
 export interface ChatResponse {
   sessionId: string;
   reply: string;
+  hasError: boolean;
   reasoningSteps: ReasoningStep[];
   toolsUsed: string[];
   knowledgeSourcesUsed: string[];
@@ -129,36 +130,41 @@ export class ChatService {
       },
     };
 
-    const { reply, toolsUsed, knowledgeRefs, allSteps } = await this.runReActWithSteps(
+    const result = await this.runReActWithSteps(
       session.messages,
       context,
       steps,
       chatModel,
     );
 
-    session.conversationHistory.push({ role: 'agent', content: reply });
+    if (result.reply) {
+      session.conversationHistory.push({ role: 'agent', content: result.reply });
+    }
 
-    const uniqueKBSources = [...new Set(knowledgeRefs.map((r) => r.split(':')[0]))];
+    const uniqueKBSources = [...new Set(result.knowledgeRefs.map((r) => r.split(':')[0]))];
 
     steps.push({
-      type: 'llm_response',
+      type: result.hasError ? 'error' : 'llm_response',
       timestamp: new Date().toISOString(),
       durationMs: Date.now() - startTime,
-      content: `Resposta gerada (${reply.length} chars). Tools: ${toolsUsed.length}. KB hits: ${knowledgeRefs.length}.`,
+      content: result.hasError
+        ? `Erro no processamento. Tools: ${result.toolsUsed.length}.`
+        : `Resposta gerada (${result.reply.length} chars). Tools: ${result.toolsUsed.length}. KB hits: ${result.knowledgeRefs.length}.`,
       details: {
-        replyPreview: reply.slice(0, 200),
-        toolsUsed,
-        knowledgeRefs,
+        replyPreview: result.reply?.slice(0, 200) || null,
+        toolsUsed: result.toolsUsed,
+        knowledgeRefs: result.knowledgeRefs,
       },
     });
 
-    await this.persistSession(session, toolsUsed, uniqueKBSources);
+    await this.persistSession(session, result.toolsUsed, uniqueKBSources);
 
     return {
       sessionId: session.id,
-      reply,
+      reply: result.reply,
+      hasError: result.hasError,
       reasoningSteps: steps,
-      toolsUsed,
+      toolsUsed: result.toolsUsed,
       knowledgeSourcesUsed: uniqueKBSources,
       totalDurationMs: Date.now() - startTime,
       conversationLength: session.conversationHistory.length,
@@ -172,6 +178,7 @@ export class ChatService {
     model?: string,
   ): Promise<{
     reply: string;
+    hasError: boolean;
     toolsUsed: string[];
     knowledgeRefs: string[];
     allSteps: ReasoningStep[];
@@ -215,13 +222,9 @@ export class ChatService {
           },
         });
 
-        const isKeyError = /quota|unauthorized|invalid.*key|401|429|connection/i.test(errMsg);
-        const userMessage = isKeyError
-          ? '⚠️ O serviço de IA está temporariamente indisponível. A equipe técnica foi notificada. Por favor, tente novamente em alguns minutos.'
-          : 'Desculpe, tive um problema ao processar sua mensagem. Pode tentar novamente?';
-
         return {
-          reply: userMessage,
+          reply: '',
+          hasError: true,
           toolsUsed,
           knowledgeRefs,
           allSteps: steps,
@@ -243,7 +246,8 @@ export class ChatService {
         });
 
         return {
-          reply: response.content || 'Desculpe, tive um problema ao processar. Pode repetir?',
+          reply: response.content || '',
+          hasError: !response.content,
           toolsUsed,
           knowledgeRefs,
           allSteps: steps,
@@ -340,7 +344,8 @@ export class ChatService {
     }
 
     return {
-      reply: 'Desculpe, atingi o limite de processamento. Pode reformular sua pergunta?',
+      reply: '',
+      hasError: true,
       toolsUsed,
       knowledgeRefs,
       allSteps: steps,

@@ -267,33 +267,40 @@ export class WhatsAppWebhookController {
 
       this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phoneNumber}`);
 
-      if (response.reply) {
-        const paragraphs = response.reply
-          .split(/\n{2,}/)
-          .map((p) => p.trim())
-          .filter(Boolean);
-
-        let anySendFailed = false;
-        for (let i = 0; i < paragraphs.length; i++) {
-          if (i > 0) {
-            await this.delay(1500);
-            this.uazapi.sendTyping(phoneNumber, 2000);
-            await this.delay(2000);
-          }
-          const sent = await this.uazapi.sendText(phoneNumber, paragraphs[i]);
-          this.logger.log(`sendText to ${phoneNumber} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
-          if (!sent) anySendFailed = true;
-        }
-
-        if (anySendFailed && paragraphs.length > 0) {
-          this.logger.warn(`Some message parts failed to send to ${phoneNumber}, retrying as single message`);
-          await this.uazapi.sendText(phoneNumber, response.reply);
-        }
-
-        const cfg = await this.agentConfig.getConfig();
-        const displayName = cfg?.agentDisplayName || this.agentName;
-        this.mirrorToManager(`*${displayName}*: ${response.reply}`);
+      if (response.hasError || !response.reply) {
+        this.logger.error(`Agent error for ${phoneNumber} (hasError=${response.hasError}). Escalating to manager.`);
+        this.escalateToManager(buffered.name, phoneNumber, 'Erro interno do agente ao processar a mensagem');
+        return;
       }
+
+      const paragraphs = response.reply
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (i > 0) {
+          await this.delay(1500);
+          this.uazapi.sendTyping(phoneNumber, 2000);
+          await this.delay(2000);
+        }
+        const sent = await this.uazapi.sendText(phoneNumber, paragraphs[i]);
+        this.logger.log(`sendText to ${phoneNumber} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+
+        if (!sent) {
+          this.logger.warn(`sendText failed for ${phoneNumber}, retrying as single message`);
+          const retrySent = await this.uazapi.sendText(phoneNumber, response.reply);
+          if (!retrySent) {
+            this.logger.error(`All send attempts failed for ${phoneNumber}. Escalating to manager.`);
+            this.escalateToManager(buffered.name, phoneNumber, 'Falha ao enviar mensagem pelo WhatsApp');
+          }
+          break;
+        }
+      }
+
+      const cfg = await this.agentConfig.getConfig();
+      const displayName = cfg?.agentDisplayName || this.agentName;
+      this.mirrorToManager(`*${displayName}*: ${response.reply}`);
 
       this.logger.log(
         `Reply sent to ${phoneNumber}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Duration: ${response.totalDurationMs}ms`,
@@ -302,17 +309,25 @@ export class WhatsAppWebhookController {
       this.logger.error(
         `Failed to process/reply to ${phoneNumber}: ${err instanceof Error ? err.stack : err}`,
       );
-      try {
-        await this.uazapi.sendText(
-          phoneNumber,
-          'Desculpe, estou com uma instabilidade no momento. Vou passar você para um dos nossos analistas.',
-        );
-      } catch (sendErr) {
-        this.logger.error(`Fallback sendText also failed: ${sendErr instanceof Error ? sendErr.message : sendErr}`);
-      }
+      this.escalateToManager(buffered.name, phoneNumber, err instanceof Error ? err.message : String(err));
     } finally {
       this.processingLock.delete(phoneNumber);
     }
+  }
+
+  private escalateToManager(customerName: string, customerPhone: string, reason: string): void {
+    if (!this.managerPhone) {
+      this.logger.error(`Cannot escalate: MANAGER_WHATSAPP not configured. Customer: ${customerName} (${customerPhone}), reason: ${reason}`);
+      return;
+    }
+    const msg =
+      `[ALERTA AGENTE]\n` +
+      `O agente não conseguiu processar o atendimento de *${customerName}* (${customerPhone}).\n` +
+      `Por favor, transfira para outro analista.\n` +
+      `Motivo: ${reason.slice(0, 200)}`;
+    this.uazapi.sendText(this.managerPhone, msg).catch((err) => {
+      this.logger.error(`CRITICAL: Failed to escalate to manager: ${err}`);
+    });
   }
 
   private mirrorToManager(text: string): void {

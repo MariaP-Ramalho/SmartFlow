@@ -336,7 +336,9 @@ export default function AgentPage() {
 
       const agentMsg: ChatMessage = {
         role: "agent",
-        content: data.reply,
+        content: data.hasError
+          ? "[Erro interno] O agente não conseguiu processar. Verifique os logs e reasoning steps."
+          : data.reply || "(sem resposta)",
         timestamp: new Date().toISOString(),
         reasoningSteps: data.reasoningSteps || [],
         toolsUsed: data.toolsUsed || [],
