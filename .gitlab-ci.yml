@@ -41,11 +41,27 @@ deploy:
     - |
       if [ ! -f /opt/apps/resolve/.env ]; then
         echo "WARN: /opt/apps/resolve/.env not found, creating from CI variables..."
-        echo "PORT=3003" > /opt/apps/resolve/.env
-        echo "MONGODB_URI=${MONGODB_URI}" >> /opt/apps/resolve/.env
-        echo "JWT_SECRET=${JWT_SECRET}" >> /opt/apps/resolve/.env
-        echo "OPENAI_API_KEY=${OPENAI_API_KEY}" >> /opt/apps/resolve/.env
-        echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" >> /opt/apps/resolve/.env
+        cat > /opt/apps/resolve/.env << ENVEOF
+      PORT=3003
+      NODE_ENV=production
+      MONGODB_URI=${MONGODB_URI}
+      JWT_SECRET=${JWT_SECRET}
+      OPENAI_API_KEY=${OPENAI_API_KEY}
+      CORS_ORIGINS=${CORS_ORIGINS:-https://resolve.makernocode.dev}
+      ZAPFLOW_MCP_URL=${ZAPFLOW_MCP_URL}
+      ZAPFLOW_MCP_TOKEN=${ZAPFLOW_MCP_TOKEN}
+      UAZAPI_BASE_URL=${UAZAPI_BASE_URL}
+      UAZAPI_INSTANCE_TOKEN=${UAZAPI_INSTANCE_TOKEN}
+      MANAGER_WHATSAPP=${MANAGER_WHATSAPP}
+      AGENT_DISPLAY_NAME=${AGENT_DISPLAY_NAME:-Renato Solves}
+      DEFAULT_LLM_PROVIDER=openai
+      CHAT_MODEL=${CHAT_MODEL:-gpt-5.2}
+      EMBEDDING_MODEL=text-embedding-3-small
+      ADMIN_EMAIL=${ADMIN_EMAIL:-admin@resolve.com}
+      ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      ENVEOF
+      else
+        echo "INFO: /opt/apps/resolve/.env already exists, keeping current values"
       fi
     - cd /opt/apps/resolve
     - docker compose pull

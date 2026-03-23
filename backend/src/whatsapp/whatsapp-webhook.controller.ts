@@ -75,9 +75,13 @@ export class WhatsAppWebhookController {
     res.status(200).send('OK');
 
     try {
+      this.logger.debug(`Raw webhook payload: ${JSON.stringify(body).slice(0, 500)}`);
       const { phone, name, text, messageId, remoteJid } = this.parsePayload(body);
 
-      if (!phone || !text) return;
+      if (!phone || !text) {
+        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}`);
+        return;
+      }
 
       this.logger.log(`WhatsApp message from ${name} (${phone}): ${text.slice(0, 80)}`);
 
@@ -87,8 +91,76 @@ export class WhatsAppWebhookController {
 
       this.bufferMessage(phone, name, text);
     } catch (err) {
-      this.logger.error(`Webhook processing error: ${err instanceof Error ? err.message : err}`);
+      this.logger.error(`Webhook processing error: ${err instanceof Error ? err.stack : err}`);
     }
+  }
+
+  @Post('test-flow')
+  @HttpCode(200)
+  async testFlow(
+    @Body() body: { message?: string; phone?: string; name?: string },
+  ) {
+    const steps: { step: string; status: string; durationMs?: number; detail?: string }[] = [];
+    const msg = body.message || 'Teste de fluxo do agente';
+    const phone = body.phone || '5500000000000';
+    const name = body.name || 'Teste Diagnóstico';
+
+    let step = 'uazapi_connection';
+    steps.push({ step, status: this.uazapi.isConnected ? 'ok' : 'fail', detail: this.uazapi.isConnected ? 'connected' : 'not configured' });
+
+    step = 'manager_phone';
+    steps.push({ step, status: this.managerPhone ? 'ok' : 'warn', detail: this.managerPhone || 'not set' });
+
+    step = 'agent_config';
+    const cfgStart = Date.now();
+    try {
+      const cfg = await this.agentConfig.getConfig();
+      steps.push({ step, status: 'ok', durationMs: Date.now() - cfgStart, detail: `model=${cfg?.chatModel}, buffer=${cfg?.bufferDelayMs}ms, maxIter=${cfg?.maxToolIterations}` });
+    } catch (err) {
+      steps.push({ step, status: 'fail', durationMs: Date.now() - cfgStart, detail: err instanceof Error ? err.message : String(err) });
+      return { ok: false, steps };
+    }
+
+    step = 'chat_service';
+    const chatStart = Date.now();
+    try {
+      const response = await this.chatService.chat({
+        message: msg,
+        sessionId: `diag-${Date.now()}`,
+        systemName: 'Diagnóstico',
+        customerName: name,
+      });
+      steps.push({
+        step,
+        status: 'ok',
+        durationMs: Date.now() - chatStart,
+        detail: `reply=${response.reply?.slice(0, 120)}... tools=${response.toolsUsed?.join(',')} duration=${response.totalDurationMs}ms`,
+      });
+    } catch (err) {
+      steps.push({
+        step,
+        status: 'fail',
+        durationMs: Date.now() - chatStart,
+        detail: err instanceof Error ? err.stack?.slice(0, 500) : String(err),
+      });
+      return { ok: false, steps };
+    }
+
+    step = 'send_text';
+    if (phone !== '5500000000000') {
+      const sendStart = Date.now();
+      try {
+        const sent = await this.uazapi.sendText(phone, `[Teste] Agente funcionando.`);
+        steps.push({ step, status: sent ? 'ok' : 'fail', durationMs: Date.now() - sendStart });
+      } catch (err) {
+        steps.push({ step, status: 'fail', durationMs: Date.now() - sendStart, detail: err instanceof Error ? err.message : String(err) });
+      }
+    } else {
+      steps.push({ step, status: 'skipped', detail: 'phone=5500000000000 (default test)' });
+    }
+
+    const allOk = steps.every((s) => s.status === 'ok' || s.status === 'skipped');
+    return { ok: allOk, steps };
   }
 
   private parsePayload(body: UazapiWebhookPayload): {
@@ -183,6 +255,9 @@ export class WhatsAppWebhookController {
 
       this.mirrorToManager(`*${buffered.name}*: ${combinedMessage}`);
 
+      this.logger.log(`Calling chatService.chat for ${phoneNumber}...`);
+      const chatStart = Date.now();
+
       const response = await this.chatService.chat({
         message: combinedMessage,
         sessionId: `wa-${phoneNumber}`,
@@ -190,40 +265,69 @@ export class WhatsAppWebhookController {
         customerName: buffered.name,
       });
 
-      if (response.reply) {
-        const paragraphs = response.reply
-          .split(/\n{2,}/)
-          .map((p) => p.trim())
-          .filter(Boolean);
+      this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phoneNumber}`);
 
-        for (let i = 0; i < paragraphs.length; i++) {
-          if (i > 0) {
-            await this.delay(1500);
-            this.uazapi.sendTyping(phoneNumber, 2000);
-            await this.delay(2000);
-          }
-          await this.uazapi.sendText(phoneNumber, paragraphs[i]);
-        }
-
-        const cfg = await this.agentConfig.getConfig();
-        const displayName = cfg?.agentDisplayName || this.agentName;
-        this.mirrorToManager(`*${displayName}*: ${response.reply}`);
+      if (response.hasError || !response.reply) {
+        this.logger.error(`Agent error for ${phoneNumber} (hasError=${response.hasError}). Escalating to manager.`);
+        this.escalateToManager(buffered.name, phoneNumber, 'Erro interno do agente ao processar a mensagem');
+        return;
       }
+
+      const paragraphs = response.reply
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      for (let i = 0; i < paragraphs.length; i++) {
+        if (i > 0) {
+          await this.delay(1500);
+          this.uazapi.sendTyping(phoneNumber, 2000);
+          await this.delay(2000);
+        }
+        const sent = await this.uazapi.sendText(phoneNumber, paragraphs[i]);
+        this.logger.log(`sendText to ${phoneNumber} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+
+        if (!sent) {
+          this.logger.warn(`sendText failed for ${phoneNumber}, retrying as single message`);
+          const retrySent = await this.uazapi.sendText(phoneNumber, response.reply);
+          if (!retrySent) {
+            this.logger.error(`All send attempts failed for ${phoneNumber}. Escalating to manager.`);
+            this.escalateToManager(buffered.name, phoneNumber, 'Falha ao enviar mensagem pelo WhatsApp');
+          }
+          break;
+        }
+      }
+
+      const cfg = await this.agentConfig.getConfig();
+      const displayName = cfg?.agentDisplayName || this.agentName;
+      this.mirrorToManager(`*${displayName}*: ${response.reply}`);
 
       this.logger.log(
         `Reply sent to ${phoneNumber}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Duration: ${response.totalDurationMs}ms`,
       );
     } catch (err) {
       this.logger.error(
-        `Failed to process/reply to ${phoneNumber}: ${err instanceof Error ? err.message : err}`,
+        `Failed to process/reply to ${phoneNumber}: ${err instanceof Error ? err.stack : err}`,
       );
-      await this.uazapi.sendText(
-        phoneNumber,
-        'Desculpe, estou com uma instabilidade no momento. Vou passar você para um dos nossos analistas.',
-      );
+      this.escalateToManager(buffered.name, phoneNumber, err instanceof Error ? err.message : String(err));
     } finally {
       this.processingLock.delete(phoneNumber);
     }
+  }
+
+  private escalateToManager(customerName: string, customerPhone: string, reason: string): void {
+    if (!this.managerPhone) {
+      this.logger.error(`Cannot escalate: MANAGER_WHATSAPP not configured. Customer: ${customerName} (${customerPhone}), reason: ${reason}`);
+      return;
+    }
+    const msg =
+      `[ALERTA AGENTE]\n` +
+      `O agente não conseguiu processar o atendimento de *${customerName}* (${customerPhone}).\n` +
+      `Por favor, transfira para outro analista.\n` +
+      `Motivo: ${reason.slice(0, 200)}`;
+    this.uazapi.sendText(this.managerPhone, msg).catch((err) => {
+      this.logger.error(`CRITICAL: Failed to escalate to manager: ${err}`);
+    });
   }
 
   private mirrorToManager(text: string): void {

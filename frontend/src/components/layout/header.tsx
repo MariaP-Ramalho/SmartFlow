@@ -10,9 +10,9 @@ const pageTitles: Record<string, string> = {
   "/tickets": "Atendimentos",
   "/agent": "Agente",
   "/audit": "Auditoria",
-  "/policies": "Políticas",
-  "/approvals": "Aprovações",
   "/knowledge": "Base de Conhecimento",
+  "/users": "Usuários",
+  "/settings": "Configurações",
 };
 
 function resolveTitle(pathname: string): string {

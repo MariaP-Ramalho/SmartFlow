@@ -336,7 +336,9 @@ export default function AgentPage() {
 
       const agentMsg: ChatMessage = {
         role: "agent",
-        content: data.reply,
+        content: data.hasError
+          ? "[Erro interno] O agente não conseguiu processar. Verifique os logs e reasoning steps."
+          : data.reply || "(sem resposta)",
         timestamp: new Date().toISOString(),
         reasoningSteps: data.reasoningSteps || [],
         toolsUsed: data.toolsUsed || [],
@@ -344,10 +346,10 @@ export default function AgentPage() {
         durationMs: data.totalDurationMs,
       };
 
-      setMessages((prev) => [...prev, agentMsg]);
-      setSelectedMsg((prev) => {
-        const newLen = messages.length + messageBuffer.current.length + 1;
-        return newLen;
+      setMessages((prev) => {
+        const updated = [...prev, agentMsg];
+        setSelectedMsg(updated.length - 1);
+        return updated;
       });
     } catch (err) {
       const errorMsg: ChatMessage = {
