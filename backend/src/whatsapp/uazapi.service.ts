@@ -50,15 +50,17 @@ export class UazapiService implements OnModuleInit {
     const fullNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
 
     try {
-      await this.http.post('/send/text', {
+      const resp = await this.http.post('/send/text', {
         number: fullNumber,
         text: message,
       });
-      this.logger.log(`Message sent to ${fullNumber} (${message.length} chars)`);
+      this.logger.log(`Message sent to ${fullNumber} (${message.length} chars) status=${resp.status}`);
       return true;
-    } catch (err) {
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const data = err?.response?.data;
       this.logger.error(
-        `Failed to send message to ${fullNumber}: ${err instanceof Error ? err.message : err}`,
+        `Failed to send to ${fullNumber}: status=${status} data=${JSON.stringify(data)} msg=${err?.message}`,
       );
       return false;
     }

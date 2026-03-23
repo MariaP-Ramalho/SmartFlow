@@ -151,12 +151,28 @@ export class WhatsAppWebhookController {
       const sendStart = Date.now();
       try {
         const sent = await this.uazapi.sendText(phone, `[Teste] Agente funcionando.`);
-        steps.push({ step, status: sent ? 'ok' : 'fail', durationMs: Date.now() - sendStart });
+        steps.push({ step, status: sent ? 'ok' : 'fail', durationMs: Date.now() - sendStart, detail: sent ? 'sent' : 'sendText returned false — check backend logs for details' });
       } catch (err) {
         steps.push({ step, status: 'fail', durationMs: Date.now() - sendStart, detail: err instanceof Error ? err.message : String(err) });
       }
     } else {
       steps.push({ step, status: 'skipped', detail: 'phone=5500000000000 (default test)' });
+    }
+
+    step = 'uazapi_direct_test';
+    const directStart = Date.now();
+    try {
+      const axios = require('axios');
+      const baseUrl = this.config.get<string>('UAZAPI_BASE_URL', '');
+      const token = this.config.get<string>('UAZAPI_INSTANCE_TOKEN', '');
+      const resp = await axios.post(`${baseUrl}/send/text`, { number: phone, text: '[Diag] teste direto' }, {
+        headers: { 'Content-Type': 'application/json', token },
+        timeout: 15000,
+      });
+      steps.push({ step, status: 'ok', durationMs: Date.now() - directStart, detail: `status=${resp.status} id=${resp.data?.messageid || resp.data?.id || 'n/a'}` });
+    } catch (err: any) {
+      const errDetail = `status=${err?.response?.status} data=${JSON.stringify(err?.response?.data)?.slice(0, 300)} msg=${err?.message}`;
+      steps.push({ step, status: 'fail', durationMs: Date.now() - directStart, detail: errDetail });
     }
 
     const allOk = steps.every((s) => s.status === 'ok' || s.status === 'skipped');
