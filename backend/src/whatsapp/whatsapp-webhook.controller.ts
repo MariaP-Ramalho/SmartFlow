@@ -48,6 +48,7 @@ export class WhatsAppWebhookController {
   private readonly processingLock = new Set<string>();
   private readonly managerPhone: string;
   private readonly agentName: string;
+  private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
 
   constructor(
     private readonly uazapi: UazapiService,
@@ -69,6 +70,14 @@ export class WhatsAppWebhookController {
     };
   }
 
+  @Get('debug-payloads')
+  debugPayloads() {
+    return {
+      count: this.recentPayloads.length,
+      payloads: this.recentPayloads,
+    };
+  }
+
   @Post()
   @HttpCode(200)
   async handleWebhook(@Body() body: UazapiWebhookPayload, @Res() res: Response) {
@@ -76,10 +85,18 @@ export class WhatsAppWebhookController {
 
     try {
       this.logger.debug(`Raw webhook payload: ${JSON.stringify(body).slice(0, 500)}`);
-      const { phone, name, text, messageId, remoteJid } = this.parsePayload(body);
+      const parsed = this.parsePayload(body);
+      const { phone, name, text, messageId, remoteJid } = parsed;
+
+      this.recentPayloads.push({
+        ts: new Date().toISOString(),
+        payload: JSON.parse(JSON.stringify(body)),
+        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid },
+      });
+      if (this.recentPayloads.length > 20) this.recentPayloads.shift();
 
       if (!phone || !text) {
-        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}`);
+        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
         return;
       }
 
@@ -151,12 +168,28 @@ export class WhatsAppWebhookController {
       const sendStart = Date.now();
       try {
         const sent = await this.uazapi.sendText(phone, `[Teste] Agente funcionando.`);
-        steps.push({ step, status: sent ? 'ok' : 'fail', durationMs: Date.now() - sendStart });
+        steps.push({ step, status: sent ? 'ok' : 'fail', durationMs: Date.now() - sendStart, detail: sent ? 'sent' : 'sendText returned false — check backend logs for details' });
       } catch (err) {
         steps.push({ step, status: 'fail', durationMs: Date.now() - sendStart, detail: err instanceof Error ? err.message : String(err) });
       }
     } else {
       steps.push({ step, status: 'skipped', detail: 'phone=5500000000000 (default test)' });
+    }
+
+    step = 'uazapi_direct_test';
+    const directStart = Date.now();
+    try {
+      const axios = require('axios');
+      const baseUrl = this.config.get<string>('UAZAPI_BASE_URL', '');
+      const token = this.config.get<string>('UAZAPI_INSTANCE_TOKEN', '');
+      const resp = await axios.post(`${baseUrl}/send/text`, { number: phone, text: '[Diag] teste direto' }, {
+        headers: { 'Content-Type': 'application/json', token },
+        timeout: 15000,
+      });
+      steps.push({ step, status: 'ok', durationMs: Date.now() - directStart, detail: `status=${resp.status} id=${resp.data?.messageid || resp.data?.id || 'n/a'}` });
+    } catch (err: any) {
+      const errDetail = `status=${err?.response?.status} data=${JSON.stringify(err?.response?.data)?.slice(0, 300)} msg=${err?.message}`;
+      steps.push({ step, status: 'fail', durationMs: Date.now() - directStart, detail: errDetail });
     }
 
     const allOk = steps.every((s) => s.status === 'ok' || s.status === 'skipped');
