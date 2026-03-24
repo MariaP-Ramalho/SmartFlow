@@ -1,10 +1,10 @@
 import { Controller, Post, Body, Get, HttpCode, Logger, Res, Query } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { Public } from '../auth/auth.guard';
 import { UazapiService } from './uazapi.service';
 import { ChatService } from '../agent/chat.service';
 import { AgentConfigService } from '../agent/agent-config.service';
+import { WhatsAppConfigService } from './whatsapp-config.service';
 
 interface UazapiWebhookPayload {
   // Uazapi v2 format (production)
@@ -70,18 +70,21 @@ export class WhatsAppWebhookController {
   >();
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
-  private readonly managerPhone: string;
-  private readonly agentName: string;
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
 
   constructor(
     private readonly uazapi: UazapiService,
     private readonly chatService: ChatService,
-    private readonly config: ConfigService,
     private readonly agentConfig: AgentConfigService,
-  ) {
-    this.managerPhone = this.config.get<string>('MANAGER_WHATSAPP', '');
-    this.agentName = this.config.get<string>('AGENT_DISPLAY_NAME', 'Renato Solves');
+    private readonly waConfig: WhatsAppConfigService,
+  ) {}
+
+  private get managerPhone(): string {
+    return this.waConfig.getManagerPhone();
+  }
+
+  private get agentName(): string {
+    return this.waConfig.getAgentDisplayName();
   }
 
   @Get('status')
@@ -152,6 +155,17 @@ export class WhatsAppWebhookController {
     step = 'manager_phone';
     steps.push({ step, status: this.managerPhone ? 'ok' : 'warn', detail: this.managerPhone || 'not set' });
 
+    step = 'mirror_recipients';
+    const mirrors = this.waConfig.getMirrorRecipientPhones();
+    steps.push({
+      step,
+      status: mirrors.length > 0 ? 'ok' : 'warn',
+      detail:
+        mirrors.length > 0
+          ? `count=${mirrors.length}: ${mirrors.join(', ')}`
+          : 'nenhum destinatário de espelhamento (configure gestor e/ou extras)',
+    });
+
     step = 'agent_config';
     const cfgStart = Date.now();
     try {
@@ -204,8 +218,8 @@ export class WhatsAppWebhookController {
     const directStart = Date.now();
     try {
       const axios = require('axios');
-      const baseUrl = this.config.get<string>('UAZAPI_BASE_URL', '');
-      const token = this.config.get<string>('UAZAPI_INSTANCE_TOKEN', '');
+      const baseUrl = this.waConfig.getUazapiBaseUrl();
+      const token = this.waConfig.getUazapiToken();
       const resp = await axios.post(`${baseUrl}/send/text`, { number: phone, text: '[Diag] teste direto' }, {
         headers: { 'Content-Type': 'application/json', token },
         timeout: 15000,
@@ -340,7 +354,7 @@ export class WhatsAppWebhookController {
     try {
       this.uazapi.sendTyping(phoneNumber, 8000);
 
-      this.mirrorToManager(`*${buffered.name}*: ${combinedMessage}`);
+      this.broadcastMirrorMessage(`*${buffered.name}*: ${combinedMessage}`);
 
       this.logger.log(`Calling chatService.chat for ${phoneNumber}...`);
       const chatStart = Date.now();
@@ -385,9 +399,8 @@ export class WhatsAppWebhookController {
         }
       }
 
-      const cfg = await this.agentConfig.getConfig();
-      const displayName = cfg?.agentDisplayName || this.agentName;
-      this.mirrorToManager(`*${displayName}*: ${response.reply}`);
+      const displayName = this.agentName;
+      this.broadcastMirrorMessage(`*${displayName}*: ${response.reply}`);
 
       if (response.managerNotifications?.length > 0) {
         for (const notif of response.managerNotifications) {
@@ -396,7 +409,7 @@ export class WhatsAppWebhookController {
             `Cliente: *${buffered.name}* (${phoneNumber})\n` +
             `${notif.message}` +
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
-          this.mirrorToManager(notifMsg);
+          this.sendPrimaryManagerOnly(notifMsg);
         }
       }
 
@@ -441,10 +454,25 @@ export class WhatsAppWebhookController {
     return labels[reason] || 'NOTIFICAÇÃO AGENTE';
   }
 
-  private mirrorToManager(text: string): void {
+  /** Espelhamento cliente/agente: todos os números (gestor principal + extras). */
+  private broadcastMirrorMessage(text: string): void {
+    const phones = this.waConfig.getMirrorRecipientPhones();
+    if (phones.length === 0) {
+      this.logger.warn('No mirror recipients configured; skipping mirror broadcast');
+      return;
+    }
+    for (const phone of phones) {
+      this.uazapi.sendText(phone, text).catch((err) => {
+        this.logger.warn(`Failed to mirror to ${phone}: ${err}`);
+      });
+    }
+  }
+
+  /** Alertas operacionais (bug, escalação, erro): somente gestor principal (Cássio). */
+  private sendPrimaryManagerOnly(text: string): void {
     if (!this.managerPhone) return;
     this.uazapi.sendText(this.managerPhone, text).catch((err) => {
-      this.logger.warn(`Failed to mirror to manager: ${err}`);
+      this.logger.warn(`Failed to notify primary manager: ${err}`);
     });
   }
 

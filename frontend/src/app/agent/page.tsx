@@ -24,6 +24,7 @@ import {
   Save,
   RotateCw,
   Check,
+  Database,
 } from "lucide-react";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,13 @@ interface ReasoningStep {
   details?: Record<string, any>;
 }
 
+/** Fontes usadas em uma resposta do agente (persistido no histórico / API) */
+interface AgentSourcesMeta {
+  toolsUsed?: string[];
+  knowledge?: { id: string; title: string; source?: string }[];
+  pastCases?: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
+}
+
 interface ChatMessage {
   role: "user" | "agent";
   content: string;
@@ -44,6 +52,8 @@ interface ChatMessage {
   reasoningSteps?: ReasoningStep[];
   toolsUsed?: string[];
   knowledgeSources?: string[];
+  /** Detalhe por documento / caso (preferir na UI em relação a knowledgeSources) */
+  sourcesMeta?: AgentSourcesMeta;
   durationMs?: number;
 }
 
@@ -65,7 +75,7 @@ interface HistoryDetail {
   sessionId: string;
   systemName: string;
   customerName: string;
-  messages: { role: string; content: string; timestamp: string }[];
+  messages: { role: string; content: string; timestamp: string; meta?: AgentSourcesMeta }[];
   toolsUsed: string[];
   knowledgeSourcesUsed: string[];
   status: string;
@@ -164,6 +174,92 @@ function StepItem({ step }: { step: ReasoningStep }) {
   );
 }
 
+function MessageSourcesPanel({ meta }: { meta?: AgentSourcesMeta | null }) {
+  if (!meta) {
+    return (
+      <p className="text-xs leading-relaxed text-slate-500 italic">
+        Registro de fontes por mensagem não está disponível (conversa anterior a esta funcionalidade ou dados não salvos).
+      </p>
+    );
+  }
+  const toolsUsed = meta.toolsUsed ?? [];
+  const knowledge = meta.knowledge ?? [];
+  const pastCases = meta.pastCases ?? [];
+  const hasAny = toolsUsed.length > 0 || knowledge.length > 0 || pastCases.length > 0;
+  if (!hasAny) {
+    return (
+      <p className="text-xs leading-relaxed text-slate-600">
+        Nenhuma ferramenta de busca foi usada nesta resposta (resposta direta do modelo ou sem consulta à base / casos).
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-3 text-left">
+      {toolsUsed.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">Ferramentas</p>
+          <ul className="flex flex-wrap gap-1.5">
+            {toolsUsed.map((t) => (
+              <li
+                key={t}
+                className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+              >
+                {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {knowledge.length > 0 && (
+        <div>
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-purple-800">
+            <BookOpen className="h-3 w-3" />
+            Base de conhecimento
+          </p>
+          <ul className="space-y-2">
+            {knowledge.map((doc) => (
+              <li
+                key={doc.id}
+                className="rounded-lg border border-purple-100 bg-purple-50/80 px-3 py-2 text-xs text-slate-800"
+              >
+                <span className="font-medium text-purple-900">{doc.title}</span>
+                {doc.source && (
+                  <span className="mt-0.5 block text-[10px] text-purple-700/80">Categoria: {doc.source}</span>
+                )}
+                <span className="mt-0.5 block font-mono text-[10px] text-slate-400">ID: {doc.id}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {pastCases.length > 0 && (
+        <div>
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-sky-800">
+            <Database className="h-3 w-3" />
+            Casos ZapFlow (histórico)
+          </p>
+          <ul className="space-y-2">
+            {pastCases.map((c) => (
+              <li
+                key={c.atendimentoId}
+                className="rounded-lg border border-sky-100 bg-sky-50/80 px-3 py-2 text-xs text-slate-800"
+              >
+                <span className="font-semibold text-sky-900">Atendimento #{c.atendimentoId}</span>
+                {c.sistema && (
+                  <span className="ml-2 text-[10px] font-normal text-sky-800/90">· {c.sistema}</span>
+                )}
+                {c.problemaPreview && (
+                  <p className="mt-1 text-[11px] leading-snug text-slate-600 line-clamp-4">{c.problemaPreview}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     active: "bg-green-50 text-green-700 border-green-200",
@@ -214,6 +310,7 @@ export default function AgentPage() {
   const [historyDetailLoading, setHistoryDetailLoading] = useState(false);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historySelectedMsg, setHistorySelectedMsg] = useState<number | null>(null);
 
   // Config state
   const [agentConfig, setAgentConfig] = useState<AgentConfigData | null>(null);
@@ -297,6 +394,7 @@ export default function AgentPage() {
   const loadSessionDetail = async (sid: string) => {
     setHistoryDetailLoading(true);
     try {
+      setHistorySelectedMsg(null);
       const { data } = await api.get(`/agent/chat/history/${sid}`);
       setHistoryDetail(data);
     } catch {
@@ -343,6 +441,11 @@ export default function AgentPage() {
         reasoningSteps: data.reasoningSteps || [],
         toolsUsed: data.toolsUsed || [],
         knowledgeSources: data.knowledgeSourcesUsed || [],
+        sourcesMeta: {
+          toolsUsed: [...new Set(data.toolsUsed || [])],
+          knowledge: data.knowledgeHits || [],
+          pastCases: data.pastCasesUsed || [],
+        },
         durationMs: data.totalDurationMs,
       };
 
@@ -520,15 +623,13 @@ export default function AgentPage() {
               {messages.map((msg, i) => {
                 const isUser = msg.role === "user";
                 const isSelected = selectedMsg === i;
-                const hasSteps = msg.reasoningSteps && msg.reasoningSteps.length > 0;
-
                 return (
                   <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
                     <div
                       className={`max-w-[85%] group cursor-pointer transition-all ${
                         isSelected && !isUser ? "scale-[1.01]" : ""
                       }`}
-                      onClick={() => !isUser && hasSteps && setSelectedMsg(isSelected ? null : i)}
+                      onClick={() => !isUser && setSelectedMsg(isSelected ? null : i)}
                     >
                       <div
                         className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
@@ -561,9 +662,9 @@ export default function AgentPage() {
                             {msg.toolsUsed.length}
                           </span>
                         )}
-                        {hasSteps && !isUser && (
+                        {!isUser && (
                           <span className="text-[10px] text-blue-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                            clique para ver raciocínio
+                            clique para ver fontes e raciocínio
                           </span>
                         )}
                       </div>
@@ -624,28 +725,30 @@ export default function AgentPage() {
                 Raciocínio do Agente
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Clique em uma mensagem do agente para ver os passos
+                Clique em uma mensagem do agente para ver de onde veio a informação e os passos de raciocínio
               </p>
             </div>
 
             <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
-              {!selectedSteps || selectedSteps.length === 0 ? (
+              {selectedMsg === null ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <Search className="h-12 w-12 text-slate-200 mb-3" />
                   <p className="text-sm font-medium text-slate-400">
                     Selecione uma mensagem do agente
                   </p>
                   <p className="text-xs text-slate-300 mt-1 max-w-xs">
-                    Os passos de raciocínio, buscas de conhecimento e chamadas de ferramentas aparecerão aqui
+                    Fontes (base, casos ZapFlow, ferramentas) e passos de raciocínio aparecem aqui
                   </p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
                     <span className="text-xs font-medium text-slate-500">
-                      {selectedSteps.length} passo(s) de raciocínio
+                      {selectedSteps?.length
+                        ? `${selectedSteps.length} passo(s) de raciocínio`
+                        : "Sem passos registrados"}
                     </span>
-                    {selectedMsg !== null && messages[selectedMsg]?.durationMs != null && (
+                    {messages[selectedMsg]?.durationMs != null && (
                       <span className="text-xs text-slate-400 flex items-center gap-1">
                         <Clock className="h-3 w-3" />
                         Tempo total: {((messages[selectedMsg].durationMs || 0) / 1000).toFixed(1)}s
@@ -653,7 +756,16 @@ export default function AgentPage() {
                     )}
                   </div>
 
-                  {selectedMsg !== null && messages[selectedMsg] && (
+                  {messages[selectedMsg]?.sourcesMeta && (
+                    <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                        Fontes desta resposta
+                      </p>
+                      <MessageSourcesPanel meta={messages[selectedMsg].sourcesMeta} />
+                    </div>
+                  )}
+
+                  {!messages[selectedMsg]?.sourcesMeta && messages[selectedMsg] && (
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {messages[selectedMsg].toolsUsed?.map((t, i) => (
                         <span
@@ -676,9 +788,13 @@ export default function AgentPage() {
                     </div>
                   )}
 
-                  {selectedSteps.map((step, i) => (
-                    <StepItem key={i} step={step} />
-                  ))}
+                  {selectedSteps && selectedSteps.length > 0 ? (
+                    selectedSteps.map((step, i) => <StepItem key={i} step={step} />)
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4 text-center">
+                      Não há passos de raciocínio detalhados para esta mensagem.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -791,7 +907,10 @@ export default function AgentPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setHistoryDetail(null)}
+              onClick={() => {
+                setHistorySelectedMsg(null);
+                setHistoryDetail(null);
+              }}
             >
               <ArrowLeft className="h-4 w-4" />
               Voltar
@@ -849,28 +968,50 @@ export default function AgentPage() {
             <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 space-y-3">
               {historyDetail.messages?.map((msg, i) => {
                 const isUser = msg.role === "user";
+                const isAgentSelected = !isUser && historySelectedMsg === i;
                 return (
                   <div key={i} className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
-                    <div className="max-w-[75%]">
-                      <div
-                        className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                    <div className="max-w-[85%] min-w-0">
+                      <button
+                        type="button"
+                        disabled={isUser}
+                        onClick={() => {
+                          if (isUser) return;
+                          setHistorySelectedMsg(isAgentSelected ? null : i);
+                        }}
+                        className={`w-full text-left rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-all ${
                           isUser
-                            ? "rounded-tr-sm bg-blue-600 text-white"
-                            : "rounded-tl-sm bg-white text-slate-800 shadow-sm border border-slate-100"
+                            ? "rounded-tr-sm bg-blue-600 text-white cursor-default"
+                            : `rounded-tl-sm bg-white text-slate-800 shadow-sm border ${
+                                isAgentSelected
+                                  ? "border-blue-400 ring-2 ring-blue-100"
+                                  : "border-slate-100 hover:border-slate-200 cursor-pointer"
+                              }`
                         }`}
                       >
                         {!isUser && (
-                          <div className="mb-1 flex items-center gap-1 text-[10px] font-medium text-slate-400">
-                            <Bot className="h-3 w-3" /> Resolve
+                          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <Bot className="h-3 w-3" /> Resolve
+                            </span>
+                            <span className="font-normal text-blue-500 opacity-80">ver fontes</span>
                           </div>
                         )}
                         <p className="whitespace-pre-wrap">{msg.content}</p>
-                      </div>
+                      </button>
                       {msg.timestamp && (
                         <div className={`px-1 mt-1 ${isUser ? "text-right" : ""}`}>
                           <span className="text-[10px] text-slate-300">
                             {formatTime(msg.timestamp)}
                           </span>
+                        </div>
+                      )}
+                      {isAgentSelected && (
+                        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                          <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                            Fontes desta resposta
+                          </p>
+                          <MessageSourcesPanel meta={msg.meta} />
                         </div>
                       )}
                     </div>
