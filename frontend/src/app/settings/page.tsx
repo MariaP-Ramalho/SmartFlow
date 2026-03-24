@@ -76,6 +76,7 @@ export default function SettingsPage() {
         uazapiBaseUrl: data.uazapiBaseUrl || "",
         uazapiInstanceToken: data.uazapiInstanceToken || "",
         managerWhatsApp: data.managerWhatsApp || "",
+        mirrorWhatsAppExtra: data.mirrorWhatsAppExtra || "",
         agentDisplayName: data.agentDisplayName || "",
         webhookUrl: data.webhookUrl || "",
         enabled: data.enabled ?? true,
