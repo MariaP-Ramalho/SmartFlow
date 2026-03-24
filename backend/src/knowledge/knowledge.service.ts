@@ -55,9 +55,11 @@ export class KnowledgeService {
     const [data, total] = await Promise.all([
       this.docModel
         .find(query)
+        .select('-embedding')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
+        .lean()
         .exec(),
       this.docModel.countDocuments(query).exec(),
     ]);
@@ -66,7 +68,7 @@ export class KnowledgeService {
   }
 
   async findById(id: string): Promise<KnowledgeDocument> {
-    const doc = await this.docModel.findById(id).exec();
+    const doc = await this.docModel.findById(id).select('-embedding').exec();
     if (!doc) throw new NotFoundException(`Document ${id} not found`);
     return doc;
   }
@@ -75,8 +77,16 @@ export class KnowledgeService {
     id: string,
     dto: Partial<CreateDocumentDto>,
   ): Promise<KnowledgeDocument> {
+    const update: Record<string, unknown> = {};
+    (['title', 'content', 'category', 'tags', 'source', 'metadata'] as const).forEach((key) => {
+      if (dto[key] !== undefined) update[key] = dto[key];
+    });
+    if (dto.content !== undefined) {
+      update.embedding = await this.embeddingsService.generateEmbedding(dto.content);
+    }
     const doc = await this.docModel
-      .findByIdAndUpdate(id, { $set: dto }, { new: true })
+      .findByIdAndUpdate(id, { $set: update }, { new: true })
+      .select('-embedding')
       .exec();
     if (!doc) throw new NotFoundException(`Document ${id} not found`);
     return doc;

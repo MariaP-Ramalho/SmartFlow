@@ -26,6 +26,13 @@ export interface ChatInput {
   customerName: string;
 }
 
+export interface ManagerNotification {
+  reason: string;
+  message: string;
+  customerSummary: string;
+  timestamp: string;
+}
+
 export interface ChatResponse {
   sessionId: string;
   reply: string;
@@ -35,6 +42,7 @@ export interface ChatResponse {
   knowledgeSourcesUsed: string[];
   totalDurationMs: number;
   conversationLength: number;
+  managerNotifications: ManagerNotification[];
 }
 
 interface ChatSession {
@@ -159,6 +167,9 @@ export class ChatService {
 
     await this.persistSession(session, result.toolsUsed, uniqueKBSources);
 
+    const managerNotifications: ManagerNotification[] =
+      context.metadata?.managerNotifications || [];
+
     return {
       sessionId: session.id,
       reply: result.reply,
@@ -168,6 +179,7 @@ export class ChatService {
       knowledgeSourcesUsed: uniqueKBSources,
       totalDurationMs: Date.now() - startTime,
       conversationLength: session.conversationHistory.length,
+      managerNotifications,
     };
   }
 

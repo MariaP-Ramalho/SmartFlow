@@ -13,6 +13,7 @@ import { DiagnosticTool } from './tools/diagnostic.tool';
 import { PolicyCheckTool } from './tools/policy-check.tool';
 import { DevBugTool } from './tools/dev-bug.tool';
 import { PastCasesTool } from './tools/past-cases.tool';
+import { NotifyManagerTool } from './tools/notify-manager.tool';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
 import { ConversationService } from './conversation.service';
@@ -39,6 +40,7 @@ import { DailyReportService } from './daily-report.service';
     PolicyCheckTool,
     DevBugTool,
     PastCasesTool,
+    NotifyManagerTool,
     AgentService,
     ConversationService,
     ChatService,
@@ -56,6 +58,7 @@ export class AgentModule implements OnModuleInit {
     private readonly policyCheckTool: PolicyCheckTool,
     private readonly devBugTool: DevBugTool,
     private readonly pastCasesTool: PastCasesTool,
+    private readonly notifyManagerTool: NotifyManagerTool,
   ) {}
 
   onModuleInit() {
@@ -65,5 +68,6 @@ export class AgentModule implements OnModuleInit {
     this.toolRegistry.register(this.policyCheckTool);
     this.toolRegistry.register(this.devBugTool);
     this.toolRegistry.register(this.pastCasesTool);
+    this.toolRegistry.register(this.notifyManagerTool);
   }
 }

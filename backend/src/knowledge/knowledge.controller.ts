@@ -7,6 +7,8 @@ import {
   Param,
   Body,
   Query,
+  Request,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiQuery } from '@nestjs/swagger';
 import { KnowledgeService } from './knowledge.service';
@@ -18,12 +20,14 @@ export class KnowledgeController {
   constructor(private readonly knowledgeService: KnowledgeService) {}
 
   @Post()
-  ingest(@Body() dto: CreateDocumentDto) {
+  ingest(@Request() req: any, @Body() dto: CreateDocumentDto) {
+    this.requireAdmin(req);
     return this.knowledgeService.ingest(dto);
   }
 
   @Post('bulk')
-  bulkIngest(@Body() documents: CreateDocumentDto[]) {
+  bulkIngest(@Request() req: any, @Body() documents: CreateDocumentDto[]) {
+    this.requireAdmin(req);
     return this.knowledgeService.bulkIngest(documents);
   }
 
@@ -62,17 +66,26 @@ export class KnowledgeController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: Partial<CreateDocumentDto>) {
+  update(@Request() req: any, @Param('id') id: string, @Body() dto: Partial<CreateDocumentDto>) {
+    this.requireAdmin(req);
     return this.knowledgeService.update(id, dto);
   }
 
   @Delete('all')
-  async removeAll() {
+  async removeAll(@Request() req: any) {
+    this.requireAdmin(req);
     return this.knowledgeService.deleteAll();
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
+  remove(@Request() req: any, @Param('id') id: string) {
+    this.requireAdmin(req);
     return this.knowledgeService.delete(id);
+  }
+
+  private requireAdmin(req: any): void {
+    if (req.user?.role !== 'admin') {
+      throw new ForbiddenException('Acesso restrito a administradores');
+    }
   }
 }
