@@ -7,7 +7,7 @@ export class KnowledgeTool implements AgentTool {
   readonly definition: ToolDefinition = {
     name: 'search_knowledge',
     description:
-      'Search the knowledge base across 4 real sources: assistant_kb (system manuals/procedures), daily_transcript (daily meeting notes with workarounds), clickup_bug (known bugs from dev team), resolved_case (past resolved support cases). Returns documents with source tags for audit trail.',
+      'Busca na base de conhecimento interna com manuais do sistema de Folha de Pagamento da Freire Tecnologia. Contém: procedimentos detalhados (criar folha, incluir servidor, eventos, cálculos de INSS/IRRF/13º/férias/rescisão, importações, exportações, integração SIAFIC/eSocial), guia completo de telas (campos, navegação, botões, funcionalidades de cada tela do sistema). Use para orientar o cliente sobre como realizar procedimentos no sistema.',
     parameters: {
       type: 'object',
       properties: {
@@ -15,13 +15,10 @@ export class KnowledgeTool implements AgentTool {
           type: 'string',
           description: 'The search query in Portuguese',
         },
-        sources: {
-          type: 'array',
-          items: {
-            type: 'string',
-            enum: ['assistant_kb', 'daily_transcript', 'clickup_bug', 'resolved_case'],
-          },
-          description: 'Optional filter: which knowledge sources to search. Defaults to all 4.',
+        category: {
+          type: 'string',
+          enum: ['Folha de Pagamento - Manual', 'Folha de Pagamento - Telas', 'Folha de Pagamento - SIOPE'],
+          description: 'Optional filter by document category. Omit to search all categories.',
         },
         limit: {
           type: 'number',
@@ -37,17 +34,13 @@ export class KnowledgeTool implements AgentTool {
 
   async execute(args: Record<string, any>, _context: AgentContext): Promise<ToolResult> {
     try {
-      const { query, sources, limit = 5 } = args;
+      const { query, category, limit = 5 } = args;
       if (!query) return { success: false, error: 'query is required' };
 
       const allResults = await this.knowledgeService.search(query, limit * 2);
 
-      const validSources = sources && Array.isArray(sources) && sources.length > 0
-        ? new Set(sources as string[])
-        : null;
-
-      const filtered = validSources
-        ? allResults.filter((doc: any) => validSources.has(doc.source))
+      const filtered = category
+        ? allResults.filter((doc: any) => doc.category === category)
         : allResults;
 
       const results = filtered.slice(0, limit);
@@ -56,7 +49,7 @@ export class KnowledgeTool implements AgentTool {
         success: true,
         data: {
           count: results.length,
-          sourcesSearched: validSources ? Array.from(validSources) : ['assistant_kb', 'daily_transcript', 'clickup_bug', 'resolved_case'],
+          categoryFilter: category || 'all',
           results: results.map((doc: any) => ({
             id: doc._id?.toString() || doc.id,
             title: doc.title,

@@ -209,24 +209,90 @@ export class ZapFlowPgService implements OnModuleInit {
     };
   }
 
-  async getAtendimentosList(limit = 50, apenasAbertos = false): Promise<any[]> {
+  async getSistemasSuporte(): Promise<{ z90_sis_id: number; z90_sis_nome_sistema: string }[]> {
     if (!this.mcp) return [];
-    const filtro = apenasAbertos ? 'WHERE a.z90_ate_data_fechamento IS NULL' : '';
     const { rows } = await this.mcp.executeSelectQuery(
-      `SELECT a.z90_ate_id, a.z90_ate_resumo_do_problema, a.z90_ate_data_abertura,
-              a.z90_ate_data_fechamento, a.z90_ate_id_status_atendimento,
-              a.z90_ate_resumo_da_solucao, a.z90_ate_avaliacao_cliente,
-              e.z90_ent_razao_social as cliente,
-              s.z90_sis_nome_sistema as sistema,
-              t.z90_tec_nome as tecnico
-       FROM z90_atendimentos a
-       LEFT JOIN z90_entidades e ON a.z90_ent_id = e.z90_ent_id
-       LEFT JOIN z90_sistemas_suporte s ON a.z90_ate_id_sistema_suporte = s.z90_sis_id
-       LEFT JOIN z90_tecnicos_suporte t ON a.z90_ate_id_tecnico_responsavel = t.z90_tec_id
-       ${filtro}
-       ORDER BY a.z90_ate_data_abertura DESC LIMIT ${this.esc(limit)}`,
+      `SELECT z90_sis_id, z90_sis_nome_sistema
+       FROM z90_sistemas_suporte
+       WHERE z90_sis_nome_sistema IS NOT NULL AND TRIM(z90_sis_nome_sistema) != ''
+       ORDER BY z90_sis_nome_sistema`,
     );
-    return rows;
+    return rows as { z90_sis_id: number; z90_sis_nome_sistema: string }[];
+  }
+
+  async getAtendimentosList(
+    limit = 50,
+    apenasAbertos = false,
+    filters?: {
+      sistemaId?: number;
+      tecnicoId?: number;
+      statusId?: number;
+      search?: string;
+      page?: number;
+    },
+  ): Promise<{ data: any[]; total: number }> {
+    if (!this.mcp) return { data: [], total: 0 };
+
+    const page = Math.max(1, filters?.page ?? 1);
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = [];
+    if (apenasAbertos) {
+      conditions.push('a.z90_ate_data_fechamento IS NULL');
+    }
+    if (filters?.sistemaId != null && !Number.isNaN(Number(filters.sistemaId))) {
+      conditions.push(`a.z90_ate_id_sistema_suporte = ${this.esc(Number(filters.sistemaId))}`);
+    }
+    if (filters?.tecnicoId != null && !Number.isNaN(Number(filters.tecnicoId))) {
+      conditions.push(`a.z90_ate_id_tecnico_responsavel = ${this.esc(Number(filters.tecnicoId))}`);
+    }
+    if (filters?.statusId != null && !Number.isNaN(Number(filters.statusId))) {
+      conditions.push(`a.z90_ate_id_status_atendimento = ${this.esc(Number(filters.statusId))}`);
+    }
+    if (filters?.search?.trim()) {
+      const raw = filters.search.trim().replace(/'/g, "''");
+      const like = `%${raw.toLowerCase()}%`;
+      conditions.push(`(
+        LOWER(COALESCE(a.z90_ate_resumo_do_problema, '')) LIKE ${this.esc(like)}
+        OR LOWER(COALESCE(e.z90_ent_razao_social, '')) LIKE ${this.esc(like)}
+        OR LOWER(COALESCE(s.z90_sis_nome_sistema, '')) LIKE ${this.esc(like)}
+        OR LOWER(COALESCE(t.z90_tec_nome, '')) LIKE ${this.esc(like)}
+        OR CAST(a.z90_ate_id AS TEXT) LIKE ${this.esc(`%${raw}%`)}
+      )`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countSql = `
+      SELECT COUNT(*)::bigint AS cnt
+      FROM z90_atendimentos a
+      LEFT JOIN z90_entidades e ON a.z90_ent_id = e.z90_ent_id
+      LEFT JOIN z90_sistemas_suporte s ON a.z90_ate_id_sistema_suporte = s.z90_sis_id
+      LEFT JOIN z90_tecnicos_suporte t ON a.z90_ate_id_tecnico_responsavel = t.z90_tec_id
+      ${whereClause}`;
+
+    const dataSql = `
+      SELECT a.z90_ate_id, a.z90_ate_resumo_do_problema, a.z90_ate_data_abertura,
+             a.z90_ate_data_fechamento, a.z90_ate_id_status_atendimento,
+             a.z90_ate_resumo_da_solucao, a.z90_ate_avaliacao_cliente,
+             e.z90_ent_razao_social as cliente,
+             s.z90_sis_nome_sistema as sistema,
+             t.z90_tec_nome as tecnico
+      FROM z90_atendimentos a
+      LEFT JOIN z90_entidades e ON a.z90_ent_id = e.z90_ent_id
+      LEFT JOIN z90_sistemas_suporte s ON a.z90_ate_id_sistema_suporte = s.z90_sis_id
+      LEFT JOIN z90_tecnicos_suporte t ON a.z90_ate_id_tecnico_responsavel = t.z90_tec_id
+      ${whereClause}
+      ORDER BY a.z90_ate_data_abertura DESC
+      LIMIT ${this.esc(limit)} OFFSET ${this.esc(offset)}`;
+
+    const [countRes, dataRes] = await Promise.all([
+      this.safeQuery(countSql, 'atendimentosCount'),
+      this.safeQuery(dataSql, 'atendimentosList'),
+    ]);
+
+    const total = parseInt(String(countRes.rows[0]?.cnt ?? '0'), 10);
+    return { data: dataRes.rows, total };
   }
 
   async searchSimilarCases(keywords: string, systemName?: string, limit = 10): Promise<any[]> {
