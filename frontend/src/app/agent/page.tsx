@@ -432,6 +432,16 @@ export default function AgentPage() {
         setSessionId(data.sessionId);
       }
 
+      const toolsUsedArr = Array.isArray(data.toolsUsed)
+        ? (data.toolsUsed as string[])
+        : [];
+      const knowledgeHitsArr = (Array.isArray(data.knowledgeHits)
+        ? data.knowledgeHits
+        : []) as NonNullable<AgentSourcesMeta["knowledge"]>;
+      const pastCasesArr = (Array.isArray(data.pastCasesUsed)
+        ? data.pastCasesUsed
+        : []) as NonNullable<AgentSourcesMeta["pastCases"]>;
+
       const agentMsg: ChatMessage = {
         role: "agent",
         content: data.hasError
@@ -439,12 +449,12 @@ export default function AgentPage() {
           : data.reply || "(sem resposta)",
         timestamp: new Date().toISOString(),
         reasoningSteps: data.reasoningSteps || [],
-        toolsUsed: data.toolsUsed || [],
-        knowledgeSources: data.knowledgeSourcesUsed || [],
+        toolsUsed: toolsUsedArr,
+        knowledgeSources: (data.knowledgeSourcesUsed || []) as string[],
         sourcesMeta: {
-          toolsUsed: [...new Set(data.toolsUsed || [])],
-          knowledge: data.knowledgeHits || [],
-          pastCases: data.pastCasesUsed || [],
+          toolsUsed: [...new Set(toolsUsedArr)],
+          knowledge: knowledgeHitsArr,
+          pastCases: pastCasesArr,
         },
         durationMs: data.totalDurationMs,
       };
