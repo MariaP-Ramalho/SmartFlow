@@ -33,6 +33,12 @@ export interface ManagerNotification {
   timestamp: string;
 }
 
+export interface AgentMessageSourcesMeta {
+  toolsUsed: string[];
+  knowledge: { id: string; title: string; source?: string }[];
+  pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
+}
+
 export interface ChatResponse {
   sessionId: string;
   reply: string;
@@ -40,6 +46,10 @@ export interface ChatResponse {
   reasoningSteps: ReasoningStep[];
   toolsUsed: string[];
   knowledgeSourcesUsed: string[];
+  /** Documentos da base usados nesta resposta (detalhe) */
+  knowledgeHits?: { id: string; title: string; source?: string }[];
+  /** Casos ZapFlow consultados nesta resposta */
+  pastCasesUsed?: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
   totalDurationMs: number;
   conversationLength: number;
   managerNotifications: ManagerNotification[];
@@ -48,7 +58,7 @@ export interface ChatResponse {
 interface ChatSession {
   id: string;
   messages: LLMMessage[];
-  conversationHistory: { role: string; content: string }[];
+  conversationHistory: { role: string; content: string; meta?: AgentMessageSourcesMeta }[];
   systemName: string;
   customerName: string;
   attemptCount: number;
@@ -146,7 +156,16 @@ export class ChatService {
     );
 
     if (result.reply) {
-      session.conversationHistory.push({ role: 'agent', content: result.reply });
+      const sourcesMeta: AgentMessageSourcesMeta = {
+        toolsUsed: [...new Set(result.toolsUsed)],
+        knowledge: result.knowledgeHits,
+        pastCases: result.pastCases,
+      };
+      session.conversationHistory.push({
+        role: 'agent',
+        content: result.reply,
+        meta: sourcesMeta,
+      });
     }
 
     const uniqueKBSources = [...new Set(result.knowledgeRefs.map((r) => r.split(':')[0]))];
@@ -177,6 +196,8 @@ export class ChatService {
       reasoningSteps: steps,
       toolsUsed: result.toolsUsed,
       knowledgeSourcesUsed: uniqueKBSources,
+      knowledgeHits: result.knowledgeHits,
+      pastCasesUsed: result.pastCases,
       totalDurationMs: Date.now() - startTime,
       conversationLength: session.conversationHistory.length,
       managerNotifications,
@@ -193,6 +214,8 @@ export class ChatService {
     hasError: boolean;
     toolsUsed: string[];
     knowledgeRefs: string[];
+    knowledgeHits: { id: string; title: string; source?: string }[];
+    pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
     allSteps: ReasoningStep[];
   }> {
     const toolDefinitions = this.toolRegistry.getDefinitions().map((def) => ({
@@ -203,6 +226,10 @@ export class ChatService {
 
     const toolsUsed: string[] = [];
     const knowledgeRefs: string[] = [];
+    const knowledgeHits: { id: string; title: string; source?: string }[] = [];
+    const seenKnowledgeId = new Set<string>();
+    const pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[] = [];
+    const seenCaseId = new Set<number>();
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const llmStart = Date.now();
@@ -239,6 +266,8 @@ export class ChatService {
           hasError: true,
           toolsUsed,
           knowledgeRefs,
+          knowledgeHits,
+          pastCases,
           allSteps: steps,
         };
       }
@@ -262,6 +291,8 @@ export class ChatService {
           hasError: !response.content,
           toolsUsed,
           knowledgeRefs,
+          knowledgeHits,
+          pastCases,
           allSteps: steps,
         };
       }
@@ -331,6 +362,15 @@ export class ChatService {
           if (toolCall.name === 'search_knowledge' && result.success && result.data?.results) {
             for (const r of result.data.results) {
               knowledgeRefs.push(`${r.source}:${r.id}`);
+              const kid = String(r.id ?? '');
+              if (kid && !seenKnowledgeId.has(kid)) {
+                seenKnowledgeId.add(kid);
+                knowledgeHits.push({
+                  id: kid,
+                  title: r.title || '(sem título)',
+                  source: r.source || r.category,
+                });
+              }
               steps.push({
                 type: 'knowledge_hit',
                 timestamp: new Date().toISOString(),
@@ -343,6 +383,20 @@ export class ChatService {
                   contentPreview: r.content?.slice(0, 200),
                 },
               });
+            }
+          }
+
+          if (toolCall.name === 'search_past_cases' && result.success && result.data?.cases?.length) {
+            for (const c of result.data.cases) {
+              const aid = Number(c.atendimento_id);
+              if (Number.isFinite(aid) && !seenCaseId.has(aid)) {
+                seenCaseId.add(aid);
+                pastCases.push({
+                  atendimentoId: aid,
+                  sistema: c.sistema,
+                  problemaPreview: (c.problema || '').slice(0, 240),
+                });
+              }
             }
           }
 
@@ -360,6 +414,8 @@ export class ChatService {
       hasError: true,
       toolsUsed,
       knowledgeRefs,
+      knowledgeHits,
+      pastCases,
       allSteps: steps,
     };
   }
@@ -383,6 +439,7 @@ export class ChatService {
         role: m.role === 'agent' ? 'agent' : 'user',
         content: m.content,
         timestamp: new Date(),
+        ...(m.role === 'agent' && m.meta ? { meta: m.meta } : {}),
       }));
 
       await this.chatSessionModel.findOneAndUpdate(

@@ -1,39 +1,51 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import { WhatsAppConfigService } from './whatsapp-config.service';
 
 @Injectable()
 export class UazapiService implements OnModuleInit {
   private readonly logger = new Logger(UazapiService.name);
   private http: AxiosInstance | null = null;
-  private baseUrl: string;
-  private instanceToken: string;
+  private currentBaseUrl = '';
+  private currentToken = '';
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly waConfig: WhatsAppConfigService) {}
 
-  onModuleInit() {
-    this.baseUrl = this.config.get<string>('UAZAPI_BASE_URL', '');
-    this.instanceToken = this.config.get<string>('UAZAPI_INSTANCE_TOKEN', '');
+  async onModuleInit() {
+    await this.reload();
+  }
 
-    if (!this.baseUrl || !this.instanceToken) {
-      this.logger.warn(
-        'UAZAPI_BASE_URL or UAZAPI_INSTANCE_TOKEN not configured — WhatsApp integration disabled',
-      );
-      return;
+  async reload(): Promise<{ connected: boolean; baseUrl: string }> {
+    const baseUrl = this.waConfig.getUazapiBaseUrl();
+    const token = this.waConfig.getUazapiToken();
+
+    if (!baseUrl || !token) {
+      this.logger.warn('Uazapi not configured — WhatsApp integration disabled');
+      this.http = null;
+      this.currentBaseUrl = '';
+      this.currentToken = '';
+      return { connected: false, baseUrl: '' };
     }
 
-    const cleanBase = this.baseUrl.replace(/\/+$/, '');
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+
+    if (cleanBase === this.currentBaseUrl && token === this.currentToken && this.http) {
+      return { connected: true, baseUrl: cleanBase };
+    }
 
     this.http = axios.create({
       baseURL: cleanBase,
       headers: {
         'Content-Type': 'application/json',
-        token: this.instanceToken,
+        token,
       },
       timeout: 30000,
     });
 
-    this.logger.log(`Uazapi connected: ${cleanBase}`);
+    this.currentBaseUrl = cleanBase;
+    this.currentToken = token;
+    this.logger.log(`Uazapi (re)connected: ${cleanBase}`);
+    return { connected: true, baseUrl: cleanBase };
   }
 
   get isConnected(): boolean {
@@ -69,10 +81,7 @@ export class UazapiService implements OnModuleInit {
   async markAsRead(remoteJid: string, messageId: string): Promise<void> {
     if (!this.http) return;
     try {
-      await this.http.post('/mark/read', {
-        remoteJid,
-        messageId,
-      });
+      await this.http.post('/mark/read', { remoteJid, messageId });
     } catch {
       // non-critical
     }
@@ -90,6 +99,20 @@ export class UazapiService implements OnModuleInit {
       });
     } catch {
       // non-critical
+    }
+  }
+
+  async testConnection(): Promise<{ ok: boolean; status?: number; error?: string }> {
+    if (!this.http) return { ok: false, error: 'Uazapi not configured' };
+    try {
+      const resp = await this.http.get('/status');
+      return { ok: true, status: resp.status };
+    } catch (err: any) {
+      return {
+        ok: false,
+        status: err?.response?.status,
+        error: err?.message || 'Unknown error',
+      };
     }
   }
 }
