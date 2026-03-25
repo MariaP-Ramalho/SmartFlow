@@ -66,11 +66,13 @@ export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
   private readonly messageBuffer = new Map<
     string,
-    { texts: string[]; customerName: string; customerPhone: string; zapflowPhone: string; timer: ReturnType<typeof setTimeout> }
+    { texts: string[]; customerName: string; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
+  /** Tracks which customer name is active on each phone/channel to detect client changes. */
+  private readonly activeClientByPhone = new Map<string, string>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -336,82 +338,83 @@ export class WhatsAppWebhookController {
   }
 
   /**
-   * Buffers messages per CUSTOMER (by name), not per phone — because ZapFlow
-   * forwards multiple clients through the same WhatsApp number.
-   * The bufferKey is `phone::customerName` so different clients get independent sessions.
+   * Each phone number = one ZapFlow channel = one client at a time.
+   * When the client name changes on the same phone, we clear the old session
+   * so the agent starts fresh for the new customer.
    */
-  private async bufferMessage(zapflowPhone: string, customerName: string, text: string) {
+  private async bufferMessage(phone: string, customerName: string, text: string) {
     const config = await this.agentConfig.getConfig();
     const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
-    const bufferKey = `${zapflowPhone}::${customerName}`;
 
-    const existing = this.messageBuffer.get(bufferKey);
+    const previousClient = this.activeClientByPhone.get(phone);
+    if (previousClient && previousClient !== customerName) {
+      this.logger.log(`Client change on ${phone}: "${previousClient}" → "${customerName}". Will start new session.`);
+      this.chatService.clearSession(`wa-${phone}`);
+    }
+    this.activeClientByPhone.set(phone, customerName);
+
+    const existing = this.messageBuffer.get(phone);
 
     if (existing) {
       existing.texts.push(text);
       clearTimeout(existing.timer);
       existing.timer = setTimeout(
-        () => this.flushAndProcess(bufferKey),
+        () => this.flushAndProcess(phone),
         delay,
       );
     } else {
       const timer = setTimeout(
-        () => this.flushAndProcess(bufferKey),
+        () => this.flushAndProcess(phone),
         delay,
       );
-      this.messageBuffer.set(bufferKey, {
+      this.messageBuffer.set(phone, {
         texts: [text],
         customerName,
-        customerPhone: zapflowPhone,
-        zapflowPhone,
         timer,
       });
     }
   }
 
-  private async flushAndProcess(bufferKey: string) {
-    const buffered = this.messageBuffer.get(bufferKey);
+  private async flushAndProcess(phone: string) {
+    const buffered = this.messageBuffer.get(phone);
     if (!buffered) return;
-    this.messageBuffer.delete(bufferKey);
+    this.messageBuffer.delete(phone);
 
-    if (this.processingLock.has(bufferKey)) {
-      this.logger.warn(`Already processing for ${bufferKey}, re-buffering`);
+    if (this.processingLock.has(phone)) {
+      this.logger.warn(`Already processing for ${phone}, re-buffering`);
       for (const t of buffered.texts) {
-        this.bufferMessage(buffered.zapflowPhone, buffered.customerName, t);
+        this.bufferMessage(phone, buffered.customerName, t);
       }
       return;
     }
 
-    this.processingLock.add(bufferKey);
+    this.processingLock.add(phone);
     const combinedMessage = buffered.texts.join('\n');
-    const replyPhone = buffered.zapflowPhone;
 
     this.logger.log(
-      `Processing ${buffered.texts.length} buffered msg(s) from ${buffered.customerName} (via ${replyPhone}): ${combinedMessage.slice(0, 100)}`,
+      `Processing ${buffered.texts.length} buffered msg(s) from ${buffered.customerName} (${phone}): ${combinedMessage.slice(0, 100)}`,
     );
 
     try {
-      this.uazapi.sendTyping(replyPhone, 8000);
+      this.uazapi.sendTyping(phone, 8000);
 
       this.broadcastMirrorMessage(`*${buffered.customerName}*: ${combinedMessage}`);
 
-      this.logger.log(`Calling chatService.chat for ${bufferKey}...`);
+      this.logger.log(`Calling chatService.chat for wa-${phone}...`);
       const chatStart = Date.now();
-
-      const sessionId = `wa-${buffered.customerName.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')}`;
 
       const response = await this.chatService.chat({
         message: combinedMessage,
-        sessionId,
+        sessionId: `wa-${phone}`,
         systemName: 'WhatsApp',
         customerName: buffered.customerName,
       });
 
-      this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${bufferKey}`);
+      this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phone}`);
 
       if (response.hasError || !response.reply) {
-        this.logger.error(`Agent error for ${bufferKey} (hasError=${response.hasError}). Escalating to manager.`);
-        this.escalateToManager(buffered.customerName, replyPhone, 'Erro interno do agente ao processar a mensagem');
+        this.logger.error(`Agent error for ${phone} (hasError=${response.hasError}). Escalating to manager.`);
+        this.escalateToManager(buffered.customerName, phone, 'Erro interno do agente ao processar a mensagem');
         return;
       }
 
@@ -423,18 +426,18 @@ export class WhatsAppWebhookController {
       for (let i = 0; i < paragraphs.length; i++) {
         if (i > 0) {
           await this.delay(1500);
-          this.uazapi.sendTyping(replyPhone, 2000);
+          this.uazapi.sendTyping(phone, 2000);
           await this.delay(2000);
         }
-        const sent = await this.uazapi.sendText(replyPhone, paragraphs[i]);
-        this.logger.log(`sendText to ${replyPhone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+        const sent = await this.uazapi.sendText(phone, paragraphs[i]);
+        this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
 
         if (!sent) {
-          this.logger.warn(`sendText failed for ${replyPhone}, retrying as single message`);
-          const retrySent = await this.uazapi.sendText(replyPhone, response.reply);
+          this.logger.warn(`sendText failed for ${phone}, retrying as single message`);
+          const retrySent = await this.uazapi.sendText(phone, response.reply);
           if (!retrySent) {
-            this.logger.error(`All send attempts failed for ${replyPhone}. Escalating to manager.`);
-            this.escalateToManager(buffered.customerName, replyPhone, 'Falha ao enviar mensagem pelo WhatsApp');
+            this.logger.error(`All send attempts failed for ${phone}. Escalating to manager.`);
+            this.escalateToManager(buffered.customerName, phone, 'Falha ao enviar mensagem pelo WhatsApp');
           }
           break;
         }
@@ -447,7 +450,7 @@ export class WhatsAppWebhookController {
         for (const notif of response.managerNotifications) {
           const notifMsg =
             `[${this.reasonLabel(notif.reason)}]\n` +
-            `Cliente: *${buffered.customerName}* (${replyPhone})\n` +
+            `Cliente: *${buffered.customerName}* (${phone})\n` +
             `${notif.message}` +
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
           this.sendPrimaryManagerOnly(notifMsg);
@@ -455,15 +458,15 @@ export class WhatsAppWebhookController {
       }
 
       this.logger.log(
-        `Reply sent (${bufferKey}). Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
+        `Reply sent to ${phone}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
       );
     } catch (err) {
       this.logger.error(
-        `Failed to process/reply (${bufferKey}): ${err instanceof Error ? err.stack : err}`,
+        `Failed to process/reply to ${phone}: ${err instanceof Error ? err.stack : err}`,
       );
-      this.escalateToManager(buffered.customerName, replyPhone, err instanceof Error ? err.message : String(err));
+      this.escalateToManager(buffered.customerName, phone, err instanceof Error ? err.message : String(err));
     } finally {
-      this.processingLock.delete(bufferKey);
+      this.processingLock.delete(phone);
     }
   }
 

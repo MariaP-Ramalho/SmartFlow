@@ -77,6 +77,12 @@ export class ChatService {
     @InjectModel(ChatSessionDoc.name) private readonly chatSessionModel: Model<ChatSessionDocument>,
   ) {}
 
+  clearSession(sessionId: string): void {
+    if (this.sessions.delete(sessionId)) {
+      this.logger.log(`Session ${sessionId} cleared (client change)`);
+    }
+  }
+
   async chat(input: ChatInput): Promise<ChatResponse> {
     const startTime = Date.now();
     const steps: ReasoningStep[] = [];
