@@ -66,11 +66,28 @@ export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
   private readonly messageBuffer = new Map<
     string,
-    { texts: string[]; name: string; timer: ReturnType<typeof setTimeout> }
+    { texts: string[]; customerName: string; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
+  /** Tracks which customer name is active on each phone/channel to detect client changes. */
+  private readonly activeClientByPhone = new Map<string, string>();
+
+  /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
+  private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
+    /^Erro ao enviar mensagem:/i,
+    /^Mensagem de transbordo:/i,
+    /^O número do seu protocolo é/i,
+    /^Olá .+, foi encaminhado um atendimento/i,
+    /^Cliente aguardando atendimento/i,
+    /^Aguarde o retorno do cliente/i,
+    /^Por favor, me informe como posso te ajudar/i,
+    /^Prezado\(a\) .+, recebemos sua demanda/i,
+  ];
+
+  /** Formato ZapFlow: "*Nome diz:*\n\nMensagem real do cliente" */
+  private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
 
   constructor(
     private readonly uazapi: UazapiService,
@@ -127,13 +144,24 @@ export class WhatsAppWebhookController {
         return;
       }
 
-      this.logger.log(`WhatsApp message from ${name} (${phone}): ${text.slice(0, 80)}`);
-
       if (remoteJid && messageId) {
         this.uazapi.markAsRead(remoteJid, messageId);
       }
 
-      this.bufferMessage(phone, name, text);
+      // --- ZapFlow message parsing ---
+      const zapflowParsed = this.parseZapFlowMessage(text);
+
+      if (zapflowParsed.isSystemMessage) {
+        this.logger.debug(`Ignored ZapFlow system message: "${text.slice(0, 80)}"`);
+        return;
+      }
+
+      const actualText = zapflowParsed.clientMessage || text;
+      const actualName = zapflowParsed.clientName || name;
+
+      this.logger.log(`WhatsApp from ${actualName} (via ${phone}): ${actualText.slice(0, 80)}`);
+
+      this.bufferMessage(phone, actualName, actualText);
     } catch (err) {
       this.logger.error(`Webhook processing error: ${err instanceof Error ? err.stack : err}`);
     }
@@ -309,68 +337,84 @@ export class WhatsAppWebhookController {
     };
   }
 
-  private async bufferMessage(phoneNumber: string, senderName: string, text: string) {
+  /**
+   * Each phone number = one ZapFlow channel = one client at a time.
+   * When the client name changes on the same phone, we clear the old session
+   * so the agent starts fresh for the new customer.
+   */
+  private async bufferMessage(phone: string, customerName: string, text: string) {
     const config = await this.agentConfig.getConfig();
     const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
 
-    const existing = this.messageBuffer.get(phoneNumber);
+    const previousClient = this.activeClientByPhone.get(phone);
+    if (previousClient && previousClient !== customerName) {
+      this.logger.log(`Client change on ${phone}: "${previousClient}" → "${customerName}". Will start new session.`);
+      this.chatService.clearSession(`wa-${phone}`);
+    }
+    this.activeClientByPhone.set(phone, customerName);
+
+    const existing = this.messageBuffer.get(phone);
 
     if (existing) {
       existing.texts.push(text);
       clearTimeout(existing.timer);
       existing.timer = setTimeout(
-        () => this.flushAndProcess(phoneNumber),
+        () => this.flushAndProcess(phone),
         delay,
       );
     } else {
       const timer = setTimeout(
-        () => this.flushAndProcess(phoneNumber),
+        () => this.flushAndProcess(phone),
         delay,
       );
-      this.messageBuffer.set(phoneNumber, { texts: [text], name: senderName, timer });
+      this.messageBuffer.set(phone, {
+        texts: [text],
+        customerName,
+        timer,
+      });
     }
   }
 
-  private async flushAndProcess(phoneNumber: string) {
-    const buffered = this.messageBuffer.get(phoneNumber);
+  private async flushAndProcess(phone: string) {
+    const buffered = this.messageBuffer.get(phone);
     if (!buffered) return;
-    this.messageBuffer.delete(phoneNumber);
+    this.messageBuffer.delete(phone);
 
-    if (this.processingLock.has(phoneNumber)) {
-      this.logger.warn(`Already processing for ${phoneNumber}, re-buffering`);
+    if (this.processingLock.has(phone)) {
+      this.logger.warn(`Already processing for ${phone}, re-buffering`);
       for (const t of buffered.texts) {
-        this.bufferMessage(phoneNumber, buffered.name, t);
+        this.bufferMessage(phone, buffered.customerName, t);
       }
       return;
     }
 
-    this.processingLock.add(phoneNumber);
+    this.processingLock.add(phone);
     const combinedMessage = buffered.texts.join('\n');
 
     this.logger.log(
-      `Processing ${buffered.texts.length} buffered message(s) from ${buffered.name}: ${combinedMessage.slice(0, 100)}`,
+      `Processing ${buffered.texts.length} buffered msg(s) from ${buffered.customerName} (${phone}): ${combinedMessage.slice(0, 100)}`,
     );
 
     try {
-      this.uazapi.sendTyping(phoneNumber, 8000);
+      this.uazapi.sendTyping(phone, 8000);
 
-      this.broadcastMirrorMessage(`*${buffered.name}*: ${combinedMessage}`);
+      this.broadcastMirrorMessage(`*${buffered.customerName}*: ${combinedMessage}`);
 
-      this.logger.log(`Calling chatService.chat for ${phoneNumber}...`);
+      this.logger.log(`Calling chatService.chat for wa-${phone}...`);
       const chatStart = Date.now();
 
       const response = await this.chatService.chat({
         message: combinedMessage,
-        sessionId: `wa-${phoneNumber}`,
+        sessionId: `wa-${phone}`,
         systemName: 'WhatsApp',
-        customerName: buffered.name,
+        customerName: buffered.customerName,
       });
 
-      this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phoneNumber}`);
+      this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phone}`);
 
       if (response.hasError || !response.reply) {
-        this.logger.error(`Agent error for ${phoneNumber} (hasError=${response.hasError}). Escalating to manager.`);
-        this.escalateToManager(buffered.name, phoneNumber, 'Erro interno do agente ao processar a mensagem');
+        this.logger.error(`Agent error for ${phone} (hasError=${response.hasError}). Escalating to manager.`);
+        this.escalateToManager(buffered.customerName, phone, 'Erro interno do agente ao processar a mensagem');
         return;
       }
 
@@ -382,18 +426,18 @@ export class WhatsAppWebhookController {
       for (let i = 0; i < paragraphs.length; i++) {
         if (i > 0) {
           await this.delay(1500);
-          this.uazapi.sendTyping(phoneNumber, 2000);
+          this.uazapi.sendTyping(phone, 2000);
           await this.delay(2000);
         }
-        const sent = await this.uazapi.sendText(phoneNumber, paragraphs[i]);
-        this.logger.log(`sendText to ${phoneNumber} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+        const sent = await this.uazapi.sendText(phone, paragraphs[i]);
+        this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
 
         if (!sent) {
-          this.logger.warn(`sendText failed for ${phoneNumber}, retrying as single message`);
-          const retrySent = await this.uazapi.sendText(phoneNumber, response.reply);
+          this.logger.warn(`sendText failed for ${phone}, retrying as single message`);
+          const retrySent = await this.uazapi.sendText(phone, response.reply);
           if (!retrySent) {
-            this.logger.error(`All send attempts failed for ${phoneNumber}. Escalating to manager.`);
-            this.escalateToManager(buffered.name, phoneNumber, 'Falha ao enviar mensagem pelo WhatsApp');
+            this.logger.error(`All send attempts failed for ${phone}. Escalating to manager.`);
+            this.escalateToManager(buffered.customerName, phone, 'Falha ao enviar mensagem pelo WhatsApp');
           }
           break;
         }
@@ -406,7 +450,7 @@ export class WhatsAppWebhookController {
         for (const notif of response.managerNotifications) {
           const notifMsg =
             `[${this.reasonLabel(notif.reason)}]\n` +
-            `Cliente: *${buffered.name}* (${phoneNumber})\n` +
+            `Cliente: *${buffered.customerName}* (${phone})\n` +
             `${notif.message}` +
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
           this.sendPrimaryManagerOnly(notifMsg);
@@ -414,15 +458,15 @@ export class WhatsAppWebhookController {
       }
 
       this.logger.log(
-        `Reply sent to ${phoneNumber}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
+        `Reply sent to ${phone}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
       );
     } catch (err) {
       this.logger.error(
-        `Failed to process/reply to ${phoneNumber}: ${err instanceof Error ? err.stack : err}`,
+        `Failed to process/reply to ${phone}: ${err instanceof Error ? err.stack : err}`,
       );
-      this.escalateToManager(buffered.name, phoneNumber, err instanceof Error ? err.message : String(err));
+      this.escalateToManager(buffered.customerName, phone, err instanceof Error ? err.message : String(err));
     } finally {
-      this.processingLock.delete(phoneNumber);
+      this.processingLock.delete(phone);
     }
   }
 
@@ -452,6 +496,43 @@ export class WhatsAppWebhookController {
       other: 'NOTIFICAÇÃO',
     };
     return labels[reason] || 'NOTIFICAÇÃO AGENTE';
+  }
+
+  /**
+   * Parse a message from ZapFlow to detect:
+   * 1) System messages (transbordo, errors, protocol) → should be ignored
+   * 2) Client messages in format "*Name diz:*\n\nActual text" → extract real name + text
+   */
+  private parseZapFlowMessage(rawText: string): {
+    isSystemMessage: boolean;
+    clientName?: string;
+    clientMessage?: string;
+  } {
+    const trimmed = rawText.trim();
+
+    for (const pattern of WhatsAppWebhookController.ZAPFLOW_SYSTEM_PATTERNS) {
+      if (pattern.test(trimmed)) {
+        return { isSystemMessage: true };
+      }
+    }
+
+    const match = WhatsAppWebhookController.ZAPFLOW_CLIENT_MSG_REGEX.exec(trimmed);
+    if (match) {
+      const clientName = match[1].trim();
+      const clientMessage = match[2].trim();
+
+      if (!clientMessage) return { isSystemMessage: true };
+
+      for (const pattern of WhatsAppWebhookController.ZAPFLOW_SYSTEM_PATTERNS) {
+        if (pattern.test(clientMessage)) {
+          return { isSystemMessage: true };
+        }
+      }
+
+      return { isSystemMessage: false, clientName, clientMessage };
+    }
+
+    return { isSystemMessage: false };
   }
 
   /** Espelhamento cliente/agente: todos os números (gestor principal + extras). */
