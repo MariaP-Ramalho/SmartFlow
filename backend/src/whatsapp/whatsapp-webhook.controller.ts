@@ -71,20 +71,25 @@ export class WhatsAppWebhookController {
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
-  /** Tracks which customer name is active on each phone/channel to detect client changes. */
+  /** Tracks which customer name is active on each phone/channel. */
   private readonly activeClientByPhone = new Map<string, string>();
+  /** Channels where sendText failed consecutively — stop processing until new atendimento. */
+  private readonly inactiveChannels = new Set<string>();
+  private readonly sendFailCountByPhone = new Map<string, number>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
     /^Erro ao enviar mensagem:/i,
     /^Mensagem de transbordo:/i,
     /^O número do seu protocolo é/i,
-    /^Olá .+, foi encaminhado um atendimento/i,
     /^Cliente aguardando atendimento/i,
     /^Aguarde o retorno do cliente/i,
     /^Por favor, me informe como posso te ajudar/i,
     /^Prezado\(a\) .+, recebemos sua demanda/i,
   ];
+
+  /** Indicates a NEW atendimento was assigned to the agent on this channel. */
+  private static readonly NEW_ATENDIMENTO_PATTERN = /^Olá .+, foi encaminhado um atendimento/i;
 
   /** Formato ZapFlow: "*Nome diz:*\n\nMensagem real do cliente" */
   private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
@@ -156,8 +161,38 @@ export class WhatsAppWebhookController {
         return;
       }
 
-      const actualText = zapflowParsed.clientMessage || text;
-      const actualName = zapflowParsed.clientName || name;
+      if (zapflowParsed.isNewAtendimento) {
+        this.logger.log(`New atendimento detected on channel ${phone}. Resetting session.`);
+        this.chatService.clearSession(`wa-${phone}`);
+        this.activeClientByPhone.delete(phone);
+        this.inactiveChannels.delete(phone);
+        this.sendFailCountByPhone.delete(phone);
+        return;
+      }
+
+      if (this.inactiveChannels.has(phone)) {
+        this.logger.debug(`Ignored message on inactive channel ${phone}: "${text.slice(0, 60)}"`);
+        return;
+      }
+
+      const currentOwner = this.activeClientByPhone.get(phone);
+      let actualName: string;
+      let actualText: string;
+
+      if (zapflowParsed.clientName && zapflowParsed.clientMessage) {
+        actualText = zapflowParsed.clientMessage;
+        if (!currentOwner) {
+          actualName = zapflowParsed.clientName;
+        } else if (currentOwner.toLowerCase() === zapflowParsed.clientName.toLowerCase()) {
+          actualName = currentOwner;
+        } else {
+          actualName = currentOwner;
+          actualText = `[Mensagem encaminhada de ${zapflowParsed.clientName}]: ${zapflowParsed.clientMessage}`;
+        }
+      } else {
+        actualName = currentOwner || name;
+        actualText = text;
+      }
 
       this.logger.log(`WhatsApp from ${actualName} (via ${phone}): ${actualText.slice(0, 80)}`);
 
@@ -337,21 +372,13 @@ export class WhatsAppWebhookController {
     };
   }
 
-  /**
-   * Each phone number = one ZapFlow channel = one client at a time.
-   * When the client name changes on the same phone, we clear the old session
-   * so the agent starts fresh for the new customer.
-   */
   private async bufferMessage(phone: string, customerName: string, text: string) {
     const config = await this.agentConfig.getConfig();
     const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
 
-    const previousClient = this.activeClientByPhone.get(phone);
-    if (previousClient && previousClient !== customerName) {
-      this.logger.log(`Client change on ${phone}: "${previousClient}" → "${customerName}". Will start new session.`);
-      this.chatService.clearSession(`wa-${phone}`);
+    if (!this.activeClientByPhone.has(phone)) {
+      this.activeClientByPhone.set(phone, customerName);
     }
-    this.activeClientByPhone.set(phone, customerName);
 
     const existing = this.messageBuffer.get(phone);
 
@@ -423,6 +450,7 @@ export class WhatsAppWebhookController {
         .map((p) => p.trim())
         .filter(Boolean);
 
+      let anySendFailed = false;
       for (let i = 0; i < paragraphs.length; i++) {
         if (i > 0) {
           await this.delay(1500);
@@ -433,14 +461,22 @@ export class WhatsAppWebhookController {
         this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
 
         if (!sent) {
-          this.logger.warn(`sendText failed for ${phone}, retrying as single message`);
-          const retrySent = await this.uazapi.sendText(phone, response.reply);
-          if (!retrySent) {
-            this.logger.error(`All send attempts failed for ${phone}. Escalating to manager.`);
-            this.escalateToManager(buffered.customerName, phone, 'Falha ao enviar mensagem pelo WhatsApp');
-          }
+          anySendFailed = true;
           break;
         }
+      }
+
+      if (anySendFailed) {
+        const failCount = (this.sendFailCountByPhone.get(phone) || 0) + 1;
+        this.sendFailCountByPhone.set(phone, failCount);
+        this.logger.warn(`Send failure #${failCount} on channel ${phone}`);
+
+        if (failCount >= 2) {
+          this.inactiveChannels.add(phone);
+          this.logger.warn(`Channel ${phone} deactivated after ${failCount} consecutive send failures (likely transferred).`);
+        }
+      } else {
+        this.sendFailCountByPhone.delete(phone);
       }
 
       const displayName = this.agentName;
@@ -498,17 +534,17 @@ export class WhatsAppWebhookController {
     return labels[reason] || 'NOTIFICAÇÃO AGENTE';
   }
 
-  /**
-   * Parse a message from ZapFlow to detect:
-   * 1) System messages (transbordo, errors, protocol) → should be ignored
-   * 2) Client messages in format "*Name diz:*\n\nActual text" → extract real name + text
-   */
   private parseZapFlowMessage(rawText: string): {
     isSystemMessage: boolean;
+    isNewAtendimento?: boolean;
     clientName?: string;
     clientMessage?: string;
   } {
     const trimmed = rawText.trim();
+
+    if (WhatsAppWebhookController.NEW_ATENDIMENTO_PATTERN.test(trimmed)) {
+      return { isSystemMessage: false, isNewAtendimento: true };
+    }
 
     for (const pattern of WhatsAppWebhookController.ZAPFLOW_SYSTEM_PATTERNS) {
       if (pattern.test(trimmed)) {
