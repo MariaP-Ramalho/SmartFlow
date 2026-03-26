@@ -69,13 +69,16 @@ export class WhatsAppWebhookController {
     { texts: string[]; customerName: string; systemName?: string; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly BUFFER_DELAY_MS = 4000;
-  private readonly processingLock = new Set<string>();
+  private readonly PROCESSING_TIMEOUT_MS = 120_000; // 2 min max per chat call
+  private readonly processingLock = new Map<string, number>(); // phone → start timestamp
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
   /** Tracks which customer name is active on each phone/channel. */
   private readonly activeClientByPhone = new Map<string, string>();
   /** Channels where sendText failed consecutively — stop processing until new atendimento. */
   private readonly inactiveChannels = new Set<string>();
   private readonly sendFailCountByPhone = new Map<string, number>();
+  /** Tracks how many times a message was re-buffered due to lock contention. */
+  private readonly rebufferCount = new Map<string, number>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -112,10 +115,17 @@ export class WhatsAppWebhookController {
 
   @Get('status')
   status() {
+    const now = Date.now();
+    const locks: Record<string, number> = {};
+    this.processingLock.forEach((start, phone) => {
+      locks[phone] = Math.round((now - start) / 1000);
+    });
     return {
       connected: this.uazapi.isConnected,
       bufferedConversations: this.messageBuffer.size,
-      processing: this.processingLock.size,
+      processingLocks: locks,
+      inactiveChannels: [...this.inactiveChannels],
+      activeClients: Object.fromEntries(this.activeClientByPhone),
       timestamp: new Date().toISOString(),
     };
   }
@@ -163,10 +173,12 @@ export class WhatsAppWebhookController {
       }
 
       if (zapflowParsed.isNewAtendimento) {
-        this.logger.log(`New atendimento detected on channel ${phone}. Resetting session and starting.`);
+        this.logger.log(`New atendimento detected on channel ${phone}. Full reset and starting conversation.`);
         this.chatService.clearSession(`wa-${phone}`);
+        this.processingLock.delete(phone);
         this.inactiveChannels.delete(phone);
         this.sendFailCountByPhone.delete(phone);
+        this.rebufferCount.delete(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -418,20 +430,41 @@ export class WhatsAppWebhookController {
     }
   }
 
+  private isLockExpired(phone: string): boolean {
+    const lockStart = this.processingLock.get(phone);
+    if (lockStart == null) return false;
+    return Date.now() - lockStart > this.PROCESSING_TIMEOUT_MS;
+  }
+
   private async flushAndProcess(phone: string) {
     const buffered = this.messageBuffer.get(phone);
     if (!buffered) return;
     this.messageBuffer.delete(phone);
 
     if (this.processingLock.has(phone)) {
-      this.logger.warn(`Already processing for ${phone}, re-buffering`);
-      for (const t of buffered.texts) {
-        this.bufferMessage(phone, buffered.customerName, t);
+      if (this.isLockExpired(phone)) {
+        this.logger.warn(`Processing lock for ${phone} expired after ${this.PROCESSING_TIMEOUT_MS}ms. Force-releasing.`);
+        this.processingLock.delete(phone);
+        this.rebufferCount.delete(phone);
+      } else {
+        const count = (this.rebufferCount.get(phone) || 0) + 1;
+        this.rebufferCount.set(phone, count);
+        if (count > 5) {
+          this.logger.error(`Re-buffer limit reached for ${phone} (${count} times). Force-releasing lock and processing.`);
+          this.processingLock.delete(phone);
+          this.rebufferCount.delete(phone);
+        } else {
+          this.logger.warn(`Already processing ${phone} (attempt #${count}), re-buffering ${buffered.texts.length} msg(s)`);
+          for (const t of buffered.texts) {
+            this.bufferMessage(phone, buffered.customerName, t, buffered.systemName);
+          }
+          return;
+        }
       }
-      return;
     }
 
-    this.processingLock.add(phone);
+    this.processingLock.set(phone, Date.now());
+    this.rebufferCount.delete(phone);
     const combinedMessage = buffered.texts.join('\n');
 
     this.logger.log(
@@ -446,12 +479,16 @@ export class WhatsAppWebhookController {
       this.logger.log(`Calling chatService.chat for wa-${phone}...`);
       const chatStart = Date.now();
 
-      const response = await this.chatService.chat({
+      const chatPromise = this.chatService.chat({
         message: combinedMessage,
         sessionId: `wa-${phone}`,
         systemName: buffered.systemName || 'WhatsApp',
         customerName: buffered.customerName,
       });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Chat processing timed out after ${this.PROCESSING_TIMEOUT_MS}ms`)), this.PROCESSING_TIMEOUT_MS),
+      );
+      const response = await Promise.race([chatPromise, timeoutPromise]);
 
       this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phone}`);
 
