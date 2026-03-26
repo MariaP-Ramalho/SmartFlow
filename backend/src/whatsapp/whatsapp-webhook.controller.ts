@@ -138,6 +138,29 @@ export class WhatsAppWebhookController {
     };
   }
 
+  @Post('reset-channel')
+  @HttpCode(200)
+  resetChannel(@Body() body: { phone?: string }) {
+    const phone = body.phone ? this.normalizePhone(body.phone) : null;
+    if (!phone) {
+      this.inactiveChannels.clear();
+      this.processingLock.clear();
+      this.sendFailCountByPhone.clear();
+      this.rebufferCount.clear();
+      this.activeClientByPhone.clear();
+      this.logger.log('All channels reset');
+      return { reset: 'all' };
+    }
+    this.inactiveChannels.delete(phone);
+    this.processingLock.delete(phone);
+    this.sendFailCountByPhone.delete(phone);
+    this.rebufferCount.delete(phone);
+    this.activeClientByPhone.delete(phone);
+    this.chatService.clearSession(`wa-${phone}`);
+    this.logger.log(`Channel ${phone} reset`);
+    return { reset: phone };
+  }
+
   @Post()
   @HttpCode(200)
   async handleWebhook(@Body() body: UazapiWebhookPayload, @Res() res: Response) {
@@ -339,10 +362,12 @@ export class WhatsAppWebhookController {
       const text = body.message.text || body.message.content || null;
       if (!text) return empty;
 
-      const phone =
+      const rawPhone =
         body.chat?.phone ||
-        (body.message.sender_pn ? this.jidToPhone(body.message.sender_pn) : null) ||
-        (body.message.chatid ? this.jidToPhone(body.message.chatid) : null);
+        body.message.sender_pn ||
+        body.message.chatid ||
+        null;
+      const phone = rawPhone ? this.normalizePhone(rawPhone) : null;
 
       if (!phone) return empty;
 
@@ -671,8 +696,13 @@ export class WhatsAppWebhookController {
     return null;
   }
 
+  /** Strips everything except digits from any phone/jid string. */
+  private normalizePhone(raw: string): string {
+    return raw.replace(/@.*$/, '').replace(/\D/g, '');
+  }
+
   private jidToPhone(jid: string): string {
-    return jid.replace(/@.*$/, '').replace(/\D/g, '');
+    return this.normalizePhone(jid);
   }
 
   private delay(ms: number): Promise<void> {
