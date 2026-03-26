@@ -36,7 +36,6 @@ const STATUS_OPTIONS = [
   { value: "1", label: "Aberto" },
   { value: "2", label: "Em andamento" },
   { value: "3", label: "Fechado" },
-  { value: "4", label: "Cancelado" },
 ];
 
 function formatDate(iso: string): string {
@@ -54,8 +53,7 @@ function statusLabel(id: number): { label: string; color: string } {
     case 1: return { label: "Aberto", color: "bg-blue-100 text-blue-700" };
     case 2: return { label: "Em Andamento", color: "bg-amber-100 text-amber-700" };
     case 3: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
-    case 4: return { label: "Cancelado", color: "bg-red-100 text-red-700" };
-    default: return { label: `Status ${id}`, color: "bg-slate-100 text-slate-600" };
+    default: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
   }
 }
 
@@ -70,7 +68,6 @@ export default function TicketsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [sistemas, setSistemas] = useState<SistemaOpt[]>([]);
   const [tecnicos, setTecnicos] = useState<TecnicoOpt[]>([]);
-  const [filtroAbertos, setFiltroAbertos] = useState(false);
   const [sistemaId, setSistemaId] = useState("");
   const [tecnicoId, setTecnicoId] = useState("");
   const [statusId, setStatusId] = useState("");
@@ -95,8 +92,12 @@ export default function TicketsPage() {
         api.get("/zapflow/sistemas"),
         api.get("/zapflow/tecnicos"),
       ]);
-      setSistemas(sRes.data?.data || []);
-      setTecnicos(tRes.data?.data || []);
+      const rawSistemas: SistemaOpt[] = sRes.data?.data || [];
+      const rawTecnicos: TecnicoOpt[] = tRes.data?.data || [];
+      rawSistemas.sort((a, b) => (a.z90_sis_nome_sistema || "").localeCompare(b.z90_sis_nome_sistema || "", "pt-BR"));
+      rawTecnicos.sort((a, b) => (a.z90_tec_nome || "").localeCompare(b.z90_tec_nome || "", "pt-BR"));
+      setSistemas(rawSistemas);
+      setTecnicos(rawTecnicos);
     } catch {
       setSistemas([]);
       setTecnicos([]);
@@ -115,7 +116,6 @@ export default function TicketsPage() {
           limit: PAGE_SIZE,
           page,
         };
-        if (filtroAbertos) params.abertos = "true";
         if (sistemaId) params.sistemaId = Number(sistemaId);
         if (tecnicoId) params.tecnicoId = Number(tecnicoId);
         if (statusId) params.statusId = Number(statusId);
@@ -133,7 +133,7 @@ export default function TicketsPage() {
         setRefreshing(false);
       }
     },
-    [page, filtroAbertos, sistemaId, tecnicoId, statusId, buscaDebounced],
+    [page, sistemaId, tecnicoId, statusId, buscaDebounced],
   );
 
   useEffect(() => {
@@ -153,7 +153,6 @@ export default function TicketsPage() {
     setStatusId("");
     setBusca("");
     setBuscaDebounced("");
-    setFiltroAbertos(false);
     setPage(1);
   };
 
@@ -188,7 +187,7 @@ export default function TicketsPage() {
             Filtros
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">
                 Sistema
@@ -250,38 +249,6 @@ export default function TicketsPage() {
                 ))}
               </select>
             </label>
-
-            <label className="block">
-              <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                Situação
-              </span>
-              <div className="flex rounded-lg border border-slate-200 p-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltroAbertos(false);
-                    setPage(1);
-                  }}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
-                    !filtroAbertos ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFiltroAbertos(true);
-                    setPage(1);
-                  }}
-                  className={`flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
-                    filtroAbertos ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  Só abertos
-                </button>
-              </div>
-            </label>
           </div>
 
           <div className="flex flex-wrap items-end gap-3">
@@ -341,13 +308,13 @@ export default function TicketsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/50">
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">ID</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Cliente</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Sistema</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Problema</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Técnico</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Abertura</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-500">Status</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500 w-[70px]">ID</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Cliente</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Sistema</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Problema</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Técnico</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500 w-[130px]">Abertura</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-center font-medium text-slate-500 w-[100px]">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -356,23 +323,23 @@ export default function TicketsPage() {
                   return (
                     <tr
                       key={a.z90_ate_id}
-                      className="border-b border-slate-50 hover:bg-blue-50/50 cursor-pointer transition-colors"
+                      className="border-b border-slate-100 hover:bg-blue-50/40 cursor-pointer transition-colors"
                       onClick={() => router.push(`/tickets/zf-${a.z90_ate_id}`)}
                     >
-                      <td className="px-4 py-3 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{a.cliente || "—"}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-700 max-w-[180px] truncate">{a.cliente || "—"}</td>
+                      <td className="px-4 py-2.5">
                         <Badge variant="info">{a.sistema || "—"}</Badge>
                       </td>
-                      <td className="px-4 py-3 max-w-xs truncate text-slate-600">
+                      <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-600">
                         {a.z90_ate_resumo_do_problema || "Sem descrição"}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{a.tecnico || "—"}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400">
+                      <td className="px-4 py-2.5 text-slate-600 max-w-[140px] truncate">{a.tecnico || "—"}</td>
+                      <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
                         {a.z90_ate_data_abertura ? formatDate(a.z90_ate_data_abertura) : "—"}
                       </td>
-                      <td className="px-4 py-3">
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${st.color}`}>
+                      <td className="px-4 py-2.5 text-center">
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${st.color}`}>
                           {st.label}
                         </span>
                       </td>
