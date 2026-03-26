@@ -66,16 +66,19 @@ export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
   private readonly messageBuffer = new Map<
     string,
-    { texts: string[]; customerName: string; timer: ReturnType<typeof setTimeout> }
+    { texts: string[]; customerName: string; systemName?: string; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly BUFFER_DELAY_MS = 4000;
-  private readonly processingLock = new Set<string>();
+  private readonly PROCESSING_TIMEOUT_MS = 120_000; // 2 min max per chat call
+  private readonly processingLock = new Map<string, number>(); // phone → start timestamp
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
   /** Tracks which customer name is active on each phone/channel. */
   private readonly activeClientByPhone = new Map<string, string>();
   /** Channels where sendText failed consecutively — stop processing until new atendimento. */
   private readonly inactiveChannels = new Set<string>();
   private readonly sendFailCountByPhone = new Map<string, number>();
+  /** Tracks how many times a message was re-buffered due to lock contention. */
+  private readonly rebufferCount = new Map<string, number>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -88,8 +91,9 @@ export class WhatsAppWebhookController {
     /^Prezado\(a\) .+, recebemos sua demanda/i,
   ];
 
-  /** Indicates a NEW atendimento was assigned to the agent on this channel. */
-  private static readonly NEW_ATENDIMENTO_PATTERN = /^Olá .+, foi encaminhado um atendimento/i;
+  /** Detects and parses the "new atendimento" notification from ZapFlow. */
+  private static readonly NEW_ATENDIMENTO_REGEX =
+    /^Olá .+, foi encaminhado um atendimento[\s\S]*?Atendimento:\s*(\d+)\s*\n\s*Cliente:\s*(.+?)\s*\n\s*Entidade:\s*(.+?)\s*\n\s*Sistema:\s*(.+?)$/im;
 
   /** Formato ZapFlow: "*Nome diz:*\n\nMensagem real do cliente" */
   private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
@@ -111,10 +115,17 @@ export class WhatsAppWebhookController {
 
   @Get('status')
   status() {
+    const now = Date.now();
+    const locks: Record<string, number> = {};
+    this.processingLock.forEach((start, phone) => {
+      locks[phone] = Math.round((now - start) / 1000);
+    });
     return {
       connected: this.uazapi.isConnected,
       bufferedConversations: this.messageBuffer.size,
-      processing: this.processingLock.size,
+      processingLocks: locks,
+      inactiveChannels: [...this.inactiveChannels],
+      activeClients: Object.fromEntries(this.activeClientByPhone),
       timestamp: new Date().toISOString(),
     };
   }
@@ -162,11 +173,26 @@ export class WhatsAppWebhookController {
       }
 
       if (zapflowParsed.isNewAtendimento) {
-        this.logger.log(`New atendimento detected on channel ${phone}. Resetting session.`);
+        this.logger.log(`New atendimento detected on channel ${phone}. Full reset and starting conversation.`);
         this.chatService.clearSession(`wa-${phone}`);
-        this.activeClientByPhone.delete(phone);
+        this.processingLock.delete(phone);
         this.inactiveChannels.delete(phone);
         this.sendFailCountByPhone.delete(phone);
+        this.rebufferCount.delete(phone);
+
+        const atd = zapflowParsed.atendimentoData;
+        const clientName = atd?.cliente || name;
+        const systemName = atd?.sistema || 'WhatsApp';
+        const greeting =
+          `Novo atendimento #${atd?.numero || '?'}. ` +
+          `Cliente: ${clientName}. ` +
+          `Entidade: ${atd?.entidade || '?'}. ` +
+          `Sistema: ${systemName}. ` +
+          `O cliente está aguardando. Cumprimente e pergunte como pode ajudar.`;
+
+        this.activeClientByPhone.set(phone, clientName);
+        this.logger.log(`Starting atendimento: ${clientName} (${systemName}) on ${phone}`);
+        this.bufferMessage(phone, clientName, greeting, systemName);
         return;
       }
 
@@ -372,7 +398,7 @@ export class WhatsAppWebhookController {
     };
   }
 
-  private async bufferMessage(phone: string, customerName: string, text: string) {
+  private async bufferMessage(phone: string, customerName: string, text: string, systemName?: string) {
     const config = await this.agentConfig.getConfig();
     const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
 
@@ -384,6 +410,7 @@ export class WhatsAppWebhookController {
 
     if (existing) {
       existing.texts.push(text);
+      if (systemName) existing.systemName = systemName;
       clearTimeout(existing.timer);
       existing.timer = setTimeout(
         () => this.flushAndProcess(phone),
@@ -397,9 +424,16 @@ export class WhatsAppWebhookController {
       this.messageBuffer.set(phone, {
         texts: [text],
         customerName,
+        systemName,
         timer,
       });
     }
+  }
+
+  private isLockExpired(phone: string): boolean {
+    const lockStart = this.processingLock.get(phone);
+    if (lockStart == null) return false;
+    return Date.now() - lockStart > this.PROCESSING_TIMEOUT_MS;
   }
 
   private async flushAndProcess(phone: string) {
@@ -408,14 +442,29 @@ export class WhatsAppWebhookController {
     this.messageBuffer.delete(phone);
 
     if (this.processingLock.has(phone)) {
-      this.logger.warn(`Already processing for ${phone}, re-buffering`);
-      for (const t of buffered.texts) {
-        this.bufferMessage(phone, buffered.customerName, t);
+      if (this.isLockExpired(phone)) {
+        this.logger.warn(`Processing lock for ${phone} expired after ${this.PROCESSING_TIMEOUT_MS}ms. Force-releasing.`);
+        this.processingLock.delete(phone);
+        this.rebufferCount.delete(phone);
+      } else {
+        const count = (this.rebufferCount.get(phone) || 0) + 1;
+        this.rebufferCount.set(phone, count);
+        if (count > 5) {
+          this.logger.error(`Re-buffer limit reached for ${phone} (${count} times). Force-releasing lock and processing.`);
+          this.processingLock.delete(phone);
+          this.rebufferCount.delete(phone);
+        } else {
+          this.logger.warn(`Already processing ${phone} (attempt #${count}), re-buffering ${buffered.texts.length} msg(s)`);
+          for (const t of buffered.texts) {
+            this.bufferMessage(phone, buffered.customerName, t, buffered.systemName);
+          }
+          return;
+        }
       }
-      return;
     }
 
-    this.processingLock.add(phone);
+    this.processingLock.set(phone, Date.now());
+    this.rebufferCount.delete(phone);
     const combinedMessage = buffered.texts.join('\n');
 
     this.logger.log(
@@ -430,12 +479,16 @@ export class WhatsAppWebhookController {
       this.logger.log(`Calling chatService.chat for wa-${phone}...`);
       const chatStart = Date.now();
 
-      const response = await this.chatService.chat({
+      const chatPromise = this.chatService.chat({
         message: combinedMessage,
         sessionId: `wa-${phone}`,
-        systemName: 'WhatsApp',
+        systemName: buffered.systemName || 'WhatsApp',
         customerName: buffered.customerName,
       });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Chat processing timed out after ${this.PROCESSING_TIMEOUT_MS}ms`)), this.PROCESSING_TIMEOUT_MS),
+      );
+      const response = await Promise.race([chatPromise, timeoutPromise]);
 
       this.logger.log(`chatService responded in ${Date.now() - chatStart}ms for ${phone}`);
 
@@ -537,12 +590,27 @@ export class WhatsAppWebhookController {
   private parseZapFlowMessage(rawText: string): {
     isSystemMessage: boolean;
     isNewAtendimento?: boolean;
+    atendimentoData?: { numero: string; cliente: string; entidade: string; sistema: string };
     clientName?: string;
     clientMessage?: string;
   } {
     const trimmed = rawText.trim();
 
-    if (WhatsAppWebhookController.NEW_ATENDIMENTO_PATTERN.test(trimmed)) {
+    const atdMatch = WhatsAppWebhookController.NEW_ATENDIMENTO_REGEX.exec(trimmed);
+    if (atdMatch) {
+      return {
+        isSystemMessage: false,
+        isNewAtendimento: true,
+        atendimentoData: {
+          numero: atdMatch[1].trim(),
+          cliente: atdMatch[2].trim(),
+          entidade: atdMatch[3].trim(),
+          sistema: atdMatch[4].trim(),
+        },
+      };
+    }
+
+    if (/^Olá .+, foi encaminhado um atendimento/i.test(trimmed)) {
       return { isSystemMessage: false, isNewAtendimento: true };
     }
 
