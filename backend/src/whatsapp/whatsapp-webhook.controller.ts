@@ -66,7 +66,7 @@ export class WhatsAppWebhookController {
   private readonly logger = new Logger(WhatsAppWebhookController.name);
   private readonly messageBuffer = new Map<
     string,
-    { texts: string[]; customerName: string; timer: ReturnType<typeof setTimeout> }
+    { texts: string[]; customerName: string; systemName?: string; timer: ReturnType<typeof setTimeout> }
   >();
   private readonly BUFFER_DELAY_MS = 4000;
   private readonly processingLock = new Set<string>();
@@ -88,8 +88,9 @@ export class WhatsAppWebhookController {
     /^Prezado\(a\) .+, recebemos sua demanda/i,
   ];
 
-  /** Indicates a NEW atendimento was assigned to the agent on this channel. */
-  private static readonly NEW_ATENDIMENTO_PATTERN = /^Olá .+, foi encaminhado um atendimento/i;
+  /** Detects and parses the "new atendimento" notification from ZapFlow. */
+  private static readonly NEW_ATENDIMENTO_REGEX =
+    /^Olá .+, foi encaminhado um atendimento[\s\S]*?Atendimento:\s*(\d+)\s*\n\s*Cliente:\s*(.+?)\s*\n\s*Entidade:\s*(.+?)\s*\n\s*Sistema:\s*(.+?)$/im;
 
   /** Formato ZapFlow: "*Nome diz:*\n\nMensagem real do cliente" */
   private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
@@ -162,11 +163,24 @@ export class WhatsAppWebhookController {
       }
 
       if (zapflowParsed.isNewAtendimento) {
-        this.logger.log(`New atendimento detected on channel ${phone}. Resetting session.`);
+        this.logger.log(`New atendimento detected on channel ${phone}. Resetting session and starting.`);
         this.chatService.clearSession(`wa-${phone}`);
-        this.activeClientByPhone.delete(phone);
         this.inactiveChannels.delete(phone);
         this.sendFailCountByPhone.delete(phone);
+
+        const atd = zapflowParsed.atendimentoData;
+        const clientName = atd?.cliente || name;
+        const systemName = atd?.sistema || 'WhatsApp';
+        const greeting =
+          `Novo atendimento #${atd?.numero || '?'}. ` +
+          `Cliente: ${clientName}. ` +
+          `Entidade: ${atd?.entidade || '?'}. ` +
+          `Sistema: ${systemName}. ` +
+          `O cliente está aguardando. Cumprimente e pergunte como pode ajudar.`;
+
+        this.activeClientByPhone.set(phone, clientName);
+        this.logger.log(`Starting atendimento: ${clientName} (${systemName}) on ${phone}`);
+        this.bufferMessage(phone, clientName, greeting, systemName);
         return;
       }
 
@@ -372,7 +386,7 @@ export class WhatsAppWebhookController {
     };
   }
 
-  private async bufferMessage(phone: string, customerName: string, text: string) {
+  private async bufferMessage(phone: string, customerName: string, text: string, systemName?: string) {
     const config = await this.agentConfig.getConfig();
     const delay = config?.bufferDelayMs || this.BUFFER_DELAY_MS;
 
@@ -384,6 +398,7 @@ export class WhatsAppWebhookController {
 
     if (existing) {
       existing.texts.push(text);
+      if (systemName) existing.systemName = systemName;
       clearTimeout(existing.timer);
       existing.timer = setTimeout(
         () => this.flushAndProcess(phone),
@@ -397,6 +412,7 @@ export class WhatsAppWebhookController {
       this.messageBuffer.set(phone, {
         texts: [text],
         customerName,
+        systemName,
         timer,
       });
     }
@@ -433,7 +449,7 @@ export class WhatsAppWebhookController {
       const response = await this.chatService.chat({
         message: combinedMessage,
         sessionId: `wa-${phone}`,
-        systemName: 'WhatsApp',
+        systemName: buffered.systemName || 'WhatsApp',
         customerName: buffered.customerName,
       });
 
@@ -537,12 +553,27 @@ export class WhatsAppWebhookController {
   private parseZapFlowMessage(rawText: string): {
     isSystemMessage: boolean;
     isNewAtendimento?: boolean;
+    atendimentoData?: { numero: string; cliente: string; entidade: string; sistema: string };
     clientName?: string;
     clientMessage?: string;
   } {
     const trimmed = rawText.trim();
 
-    if (WhatsAppWebhookController.NEW_ATENDIMENTO_PATTERN.test(trimmed)) {
+    const atdMatch = WhatsAppWebhookController.NEW_ATENDIMENTO_REGEX.exec(trimmed);
+    if (atdMatch) {
+      return {
+        isSystemMessage: false,
+        isNewAtendimento: true,
+        atendimentoData: {
+          numero: atdMatch[1].trim(),
+          cliente: atdMatch[2].trim(),
+          entidade: atdMatch[3].trim(),
+          sistema: atdMatch[4].trim(),
+        },
+      };
+    }
+
+    if (/^Olá .+, foi encaminhado um atendimento/i.test(trimmed)) {
       return { isSystemMessage: false, isNewAtendimento: true };
     }
 
