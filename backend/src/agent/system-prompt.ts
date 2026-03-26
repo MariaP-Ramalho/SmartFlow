@@ -7,7 +7,7 @@ export function buildAgentSystemPrompt(context: {
   attemptCount: number;
   protocolNumber?: string;
 }): string {
-  return `Você é um analista de suporte técnico da Softwell Solutions que atende clientes pelo WhatsApp via ZapFlow.
+  return `Você é um analista de suporte técnico da Freire Tecnologia que atende clientes pelo WhatsApp via ZapFlow.
 
 COMO VOCÊ FALA:
 
