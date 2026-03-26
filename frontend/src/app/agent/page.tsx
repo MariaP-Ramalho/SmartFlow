@@ -311,6 +311,8 @@ export default function AgentPage() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyTotalPages, setHistoryTotalPages] = useState(1);
   const [historySelectedMsg, setHistorySelectedMsg] = useState<number | null>(null);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<string>("");
 
   // Config state
   const [agentConfig, setAgentConfig] = useState<AgentConfigData | null>(null);
@@ -540,7 +542,7 @@ export default function AgentPage() {
   const selectedSteps = selectedMsg !== null ? messages[selectedMsg]?.reasoningSteps : undefined;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-2rem)]">
+    <div className="flex flex-col h-[calc(100vh-7.5rem)]">
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-3 border-b border-slate-200 pb-2">
         <button
@@ -813,10 +815,10 @@ export default function AgentPage() {
       )}
 
       {tab === "history" && !historyDetail && (
-        <div className="flex-1 overflow-y-auto">
-          <div className="mb-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <History className="h-6 w-6 text-blue-500" />
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="mb-3 flex items-center justify-between">
+            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <History className="h-5 w-5 text-blue-500" />
               Histórico de Conversas
             </h1>
             <Button variant="outline" size="sm" onClick={() => loadHistory(historyPage)}>
@@ -825,89 +827,132 @@ export default function AgentPage() {
             </Button>
           </div>
 
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={historySearch}
+                onChange={(e) => setHistorySearch(e.target.value)}
+                placeholder="Buscar por cliente, sistema ou mensagem..."
+                className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+              />
+            </div>
+            <select
+              value={historyStatusFilter}
+              onChange={(e) => setHistoryStatusFilter(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+            >
+              <option value="">Todos os status</option>
+              <option value="active">Ativo</option>
+              <option value="resolved">Resolvido</option>
+              <option value="escalated">Escalado</option>
+            </select>
+          </div>
+
           {historyLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
               <span className="ml-2 text-sm text-slate-400">Carregando...</span>
             </div>
-          ) : historySessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <MessageSquare className="h-16 w-16 text-slate-200 mb-4" />
-              <p className="text-sm font-medium text-slate-400">Nenhuma conversa ainda</p>
-              <p className="text-xs text-slate-300 mt-1">
-                Inicie uma conversa na aba Chat para ver o histórico aqui
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="space-y-2">
-                {historySessions.map((s) => (
-                  <div
-                    key={s.sessionId}
-                    onClick={() => loadSessionDetail(s.sessionId)}
-                    className="flex items-center gap-4 p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm cursor-pointer transition-all"
-                  >
-                    <div className="shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center">
-                        <MessageSquare className="h-5 w-5 text-blue-500" />
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-slate-800 truncate">
-                          {s.customerName}
-                        </span>
-                        <span className="text-xs text-slate-400">{s.systemName}</span>
-                        <StatusBadge status={s.status} />
-                      </div>
-                      <p className="text-xs text-slate-500 truncate">{s.lastMessage || "Sem mensagens"}</p>
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {formatDate(s.createdAt)}
-                        </span>
-                        <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                          <Hash className="h-3 w-3" />
-                          {s.messageCount} msgs
-                        </span>
-                        {s.toolsUsed?.length > 0 && (
-                          <span className="text-[10px] text-amber-500 flex items-center gap-1">
-                            <Wrench className="h-3 w-3" />
-                            {s.toolsUsed.length} tools
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-slate-300" />
-                  </div>
-                ))}
-              </div>
-
-              {historyTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-4">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={historyPage <= 1}
-                    onClick={() => loadHistory(historyPage - 1)}
-                  >
-                    Anterior
-                  </Button>
-                  <span className="text-xs text-slate-400">
-                    Página {historyPage} de {historyTotalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={historyPage >= historyTotalPages}
-                    onClick={() => loadHistory(historyPage + 1)}
-                  >
-                    Próxima
-                  </Button>
+          ) : (() => {
+            const q = historySearch.toLowerCase().trim();
+            const filtered = historySessions.filter((s) => {
+              if (historyStatusFilter && s.status !== historyStatusFilter) return false;
+              if (!q) return true;
+              return (
+                (s.customerName || "").toLowerCase().includes(q) ||
+                (s.systemName || "").toLowerCase().includes(q) ||
+                (s.lastMessage || "").toLowerCase().includes(q) ||
+                (s.sessionId || "").toLowerCase().includes(q)
+              );
+            });
+            if (filtered.length === 0) {
+              return (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <MessageSquare className="h-16 w-16 text-slate-200 mb-4" />
+                  <p className="text-sm font-medium text-slate-400">
+                    {historySessions.length === 0 ? "Nenhuma conversa ainda" : "Nenhuma conversa encontrada"}
+                  </p>
+                  <p className="text-xs text-slate-300 mt-1">
+                    {historySessions.length === 0
+                      ? "Inicie uma conversa na aba Chat para ver o histórico aqui"
+                      : "Tente ajustar os filtros de busca"}
+                  </p>
                 </div>
-              )}
-            </>
-          )}
+              );
+            }
+            return (
+              <>
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                  {filtered.map((s) => (
+                    <div
+                      key={s.sessionId}
+                      onClick={() => loadSessionDetail(s.sessionId)}
+                      className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm cursor-pointer transition-all"
+                    >
+                      <div className="shrink-0">
+                        <div className="h-9 w-9 rounded-full bg-blue-50 flex items-center justify-center">
+                          <MessageSquare className="h-4 w-4 text-blue-500" />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-sm font-medium text-slate-800 truncate">
+                            {s.customerName}
+                          </span>
+                          <span className="text-[11px] text-slate-400">{s.systemName}</span>
+                          <StatusBadge status={s.status} />
+                        </div>
+                        <p className="text-xs text-slate-500 truncate">{s.lastMessage || "Sem mensagens"}</p>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            {formatDate(s.createdAt)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                            <Hash className="h-3 w-3" />
+                            {s.messageCount} msgs
+                          </span>
+                          {s.toolsUsed?.length > 0 && (
+                            <span className="text-[10px] text-amber-500 flex items-center gap-1">
+                              <Wrench className="h-3 w-3" />
+                              {s.toolsUsed.length} tools
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-4 w-4 text-slate-300" />
+                    </div>
+                  ))}
+                </div>
+
+                {historyTotalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage <= 1}
+                      onClick={() => loadHistory(historyPage - 1)}
+                    >
+                      Anterior
+                    </Button>
+                    <span className="text-xs text-slate-400">
+                      Pág. {historyPage}/{historyTotalPages}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={historyPage >= historyTotalPages}
+                      onClick={() => loadHistory(historyPage + 1)}
+                    >
+                      Próxima
+                    </Button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
