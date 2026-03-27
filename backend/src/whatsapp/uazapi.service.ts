@@ -1,59 +1,48 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
 import { WhatsAppConfigService } from './whatsapp-config.service';
 
 @Injectable()
 export class UazapiService implements OnModuleInit {
   private readonly logger = new Logger(UazapiService.name);
-  private http: AxiosInstance | null = null;
-  private currentBaseUrl = '';
-  private currentToken = '';
 
   constructor(private readonly waConfig: WhatsAppConfigService) {}
 
   async onModuleInit() {
-    await this.reload();
-  }
-
-  async reload(): Promise<{ connected: boolean; baseUrl: string }> {
     const baseUrl = this.waConfig.getUazapiBaseUrl();
     const token = this.waConfig.getUazapiToken();
-
-    if (!baseUrl || !token) {
+    if (baseUrl && token) {
+      this.logger.log(`Uazapi configured: ${baseUrl}`);
+    } else {
       this.logger.warn('Uazapi not configured — WhatsApp integration disabled');
-      this.http = null;
-      this.currentBaseUrl = '';
-      this.currentToken = '';
-      return { connected: false, baseUrl: '' };
     }
+  }
 
-    const cleanBase = baseUrl.replace(/\/+$/, '');
-
-    if (cleanBase === this.currentBaseUrl && token === this.currentToken && this.http) {
-      return { connected: true, baseUrl: cleanBase };
-    }
-
-    this.http = axios.create({
-      baseURL: cleanBase,
-      headers: {
-        'Content-Type': 'application/json',
-        token,
-      },
+  private getAxiosConfig() {
+    const baseUrl = this.waConfig.getUazapiBaseUrl()?.replace(/\/+$/, '');
+    const token = this.waConfig.getUazapiToken();
+    if (!baseUrl || !token) return null;
+    return {
+      baseUrl,
+      headers: { 'Content-Type': 'application/json', token } as Record<string, string>,
       timeout: 30000,
-    });
-
-    this.currentBaseUrl = cleanBase;
-    this.currentToken = token;
-    this.logger.log(`Uazapi (re)connected: ${cleanBase}`);
-    return { connected: true, baseUrl: cleanBase };
+    };
   }
 
   get isConnected(): boolean {
-    return this.http !== null;
+    return this.getAxiosConfig() !== null;
+  }
+
+  async reload(): Promise<{ connected: boolean; baseUrl: string }> {
+    const cfg = this.getAxiosConfig();
+    if (!cfg) return { connected: false, baseUrl: '' };
+    this.logger.log(`Uazapi config reloaded: ${cfg.baseUrl}`);
+    return { connected: true, baseUrl: cfg.baseUrl };
   }
 
   async sendText(number: string, message: string): Promise<boolean> {
-    if (!this.http) {
+    const cfg = this.getAxiosConfig();
+    if (!cfg) {
       this.logger.warn('Uazapi not configured, cannot send message');
       return false;
     }
@@ -62,10 +51,11 @@ export class UazapiService implements OnModuleInit {
     const fullNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
 
     try {
-      const resp = await this.http.post('/send/text', {
-        number: fullNumber,
-        text: message,
-      });
+      const resp = await axios.post(
+        `${cfg.baseUrl}/send/text`,
+        { number: fullNumber, text: message },
+        { headers: cfg.headers, timeout: cfg.timeout },
+      );
       this.logger.log(`Message sent to ${fullNumber} (${message.length} chars) status=${resp.status}`);
       return true;
     } catch (err: any) {
@@ -79,33 +69,32 @@ export class UazapiService implements OnModuleInit {
   }
 
   async markAsRead(remoteJid: string, messageId: string): Promise<void> {
-    if (!this.http) return;
+    const cfg = this.getAxiosConfig();
+    if (!cfg) return;
     try {
-      await this.http.post('/mark/read', { remoteJid, messageId });
+      await axios.post(`${cfg.baseUrl}/mark/read`, { remoteJid, messageId }, { headers: cfg.headers, timeout: 10000 });
     } catch {
       // non-critical
     }
   }
 
   async sendTyping(number: string, durationMs = 3000): Promise<void> {
-    if (!this.http) return;
+    const cfg = this.getAxiosConfig();
+    if (!cfg) return;
     const cleanNumber = number.replace(/\D/g, '');
     const fullNumber = cleanNumber.startsWith('55') ? cleanNumber : `55${cleanNumber}`;
     try {
-      await this.http.post('/send/presence', {
-        number: fullNumber,
-        presence: 'composing',
-        delay: durationMs,
-      });
+      await axios.post(`${cfg.baseUrl}/send/presence`, { number: fullNumber, presence: 'composing', delay: durationMs }, { headers: cfg.headers, timeout: 10000 });
     } catch {
       // non-critical
     }
   }
 
   async testConnection(): Promise<{ ok: boolean; status?: number; error?: string }> {
-    if (!this.http) return { ok: false, error: 'Uazapi not configured' };
+    const cfg = this.getAxiosConfig();
+    if (!cfg) return { ok: false, error: 'Uazapi not configured' };
     try {
-      const resp = await this.http.get('/status');
+      const resp = await axios.get(`${cfg.baseUrl}/status`, { headers: cfg.headers, timeout: 10000 });
       return { ok: true, status: resp.status };
     } catch (err: any) {
       return {

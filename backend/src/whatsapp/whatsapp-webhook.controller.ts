@@ -74,8 +74,6 @@ export class WhatsAppWebhookController {
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
   /** Tracks which customer name is active on each phone/channel. */
   private readonly activeClientByPhone = new Map<string, string>();
-  /** Channels where sendText failed consecutively — stop processing until new atendimento. */
-  private readonly inactiveChannels = new Set<string>();
   private readonly sendFailCountByPhone = new Map<string, number>();
   /** Tracks how many times a message was re-buffered due to lock contention. */
   private readonly rebufferCount = new Map<string, number>();
@@ -124,8 +122,8 @@ export class WhatsAppWebhookController {
       connected: this.uazapi.isConnected,
       bufferedConversations: this.messageBuffer.size,
       processingLocks: locks,
-      inactiveChannels: [...this.inactiveChannels],
       activeClients: Object.fromEntries(this.activeClientByPhone),
+      sendFailCounts: Object.fromEntries(this.sendFailCountByPhone),
       timestamp: new Date().toISOString(),
     };
   }
@@ -143,7 +141,6 @@ export class WhatsAppWebhookController {
   resetChannel(@Body() body: { phone?: string }) {
     const phone = body.phone ? this.normalizePhone(body.phone) : null;
     if (!phone) {
-      this.inactiveChannels.clear();
       this.processingLock.clear();
       this.sendFailCountByPhone.clear();
       this.rebufferCount.clear();
@@ -151,7 +148,6 @@ export class WhatsAppWebhookController {
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
-    this.inactiveChannels.delete(phone);
     this.processingLock.delete(phone);
     this.sendFailCountByPhone.delete(phone);
     this.rebufferCount.delete(phone);
@@ -199,7 +195,6 @@ export class WhatsAppWebhookController {
         this.logger.log(`New atendimento detected on channel ${phone}. Full reset and starting conversation.`);
         this.chatService.clearSession(`wa-${phone}`);
         this.processingLock.delete(phone);
-        this.inactiveChannels.delete(phone);
         this.sendFailCountByPhone.delete(phone);
         this.rebufferCount.delete(phone);
 
@@ -216,11 +211,6 @@ export class WhatsAppWebhookController {
         this.activeClientByPhone.set(phone, clientName);
         this.logger.log(`Starting atendimento: ${clientName} (${systemName}) on ${phone}`);
         this.bufferMessage(phone, clientName, greeting, systemName);
-        return;
-      }
-
-      if (this.inactiveChannels.has(phone)) {
-        this.logger.debug(`Ignored message on inactive channel ${phone}: "${text.slice(0, 60)}"`);
         return;
       }
 
@@ -528,31 +518,27 @@ export class WhatsAppWebhookController {
         .map((p) => p.trim())
         .filter(Boolean);
 
-      let anySendFailed = false;
+      let allSent = true;
       for (let i = 0; i < paragraphs.length; i++) {
         if (i > 0) {
           await this.delay(1500);
           this.uazapi.sendTyping(phone, 2000);
           await this.delay(2000);
         }
-        const sent = await this.uazapi.sendText(phone, paragraphs[i]);
-        this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'failed'}`);
+        const sent = await this.sendWithRetry(phone, paragraphs[i], 2);
+        this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'FAILED after retries'}`);
 
         if (!sent) {
-          anySendFailed = true;
+          allSent = false;
           break;
         }
       }
 
-      if (anySendFailed) {
-        const failCount = (this.sendFailCountByPhone.get(phone) || 0) + 1;
-        this.sendFailCountByPhone.set(phone, failCount);
-        this.logger.warn(`Send failure #${failCount} on channel ${phone}`);
-
-        if (failCount >= 2) {
-          this.inactiveChannels.add(phone);
-          this.logger.warn(`Channel ${phone} deactivated after ${failCount} consecutive send failures (likely transferred).`);
-        }
+      if (!allSent) {
+        this.logger.error(`Failed to deliver reply to ${phone} after retries. Notifying manager.`);
+        this.sendPrimaryManagerOnly(
+          `[FALHA ENVIO]\nO agente gerou resposta para *${buffered.customerName}* (${phone}) mas não conseguiu entregar via WhatsApp.\nResposta gerada: ${response.reply.slice(0, 300)}`,
+        );
       } else {
         this.sendFailCountByPhone.delete(phone);
       }
@@ -703,6 +689,18 @@ export class WhatsAppWebhookController {
 
   private jidToPhone(jid: string): string {
     return this.normalizePhone(jid);
+  }
+
+  private async sendWithRetry(phone: string, text: string, maxRetries: number): Promise<boolean> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const sent = await this.uazapi.sendText(phone, text);
+      if (sent) return true;
+      if (attempt < maxRetries) {
+        this.logger.warn(`sendText to ${phone} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in 3s...`);
+        await this.delay(3000);
+      }
+    }
+    return false;
   }
 
   private delay(ms: number): Promise<void> {
