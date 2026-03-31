@@ -57,6 +57,9 @@ export class AgentConfigService implements OnModuleInit {
     maxToolIterations: number;
     agentDisplayName: string;
     customInstructions: string;
+    inactivityTimeoutMs: number;
+    inactivityMaxWarnings: number;
+    inactivityMessages: string[];
   }>): Promise<AgentConfigDocument> {
     const config = await this.model.findOneAndUpdate(
       { configId: CONFIG_ID },

@@ -89,6 +89,9 @@ export class ChatController {
       maxToolIterations: config.maxToolIterations,
       agentDisplayName: config.agentDisplayName,
       customInstructions: config.customInstructions,
+      inactivityTimeoutMs: (config as any).inactivityTimeoutMs ?? 300000,
+      inactivityMaxWarnings: (config as any).inactivityMaxWarnings ?? 3,
+      inactivityMessages: (config as any).inactivityMessages ?? [],
       updatedAt: (config as any).updatedAt,
     };
   }
@@ -102,6 +105,7 @@ export class ChatController {
     const allowed = [
       'systemPrompt', 'bufferDelayMs', 'chatModel',
       'maxAttempts', 'maxToolIterations', 'agentDisplayName', 'customInstructions',
+      'inactivityTimeoutMs', 'inactivityMaxWarnings', 'inactivityMessages',
     ];
     const updates: Record<string, any> = {};
     for (const key of allowed) {

@@ -28,6 +28,22 @@ export class AgentConfig {
 
   @Prop({ default: '' })
   customInstructions: string;
+
+  @Prop({ default: 300000 })
+  inactivityTimeoutMs: number;
+
+  @Prop({ default: 3 })
+  inactivityMaxWarnings: number;
+
+  @Prop({
+    type: [String],
+    default: [
+      'Olá, ainda está por aí? Estou aqui caso precise de ajuda.',
+      'Tudo bem? Ainda estou à disposição para te ajudar.',
+      'Como não recebi retorno, vou encerrar este atendimento. Caso precise, é só abrir um novo chamado que estaremos sempre à disposição!',
+    ],
+  })
+  inactivityMessages: string[];
 }
 
 export const AgentConfigSchema = SchemaFactory.createForClass(AgentConfig);
