@@ -77,6 +77,8 @@ export class WhatsAppWebhookController {
   private readonly sendFailCountByPhone = new Map<string, number>();
   /** Tracks how many times a message was re-buffered due to lock contention. */
   private readonly rebufferCount = new Map<string, number>();
+  /** Inactivity timers: phone → { timer, warningsSent } */
+  private readonly inactivityTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; warningsSent: number }>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -118,12 +120,17 @@ export class WhatsAppWebhookController {
     this.processingLock.forEach((start, phone) => {
       locks[phone] = Math.round((now - start) / 1000);
     });
+    const inactivity: Record<string, number> = {};
+    this.inactivityTimers.forEach((v, phone) => {
+      inactivity[phone] = v.warningsSent;
+    });
     return {
       connected: this.uazapi.isConnected,
       bufferedConversations: this.messageBuffer.size,
       processingLocks: locks,
       activeClients: Object.fromEntries(this.activeClientByPhone),
       sendFailCounts: Object.fromEntries(this.sendFailCountByPhone),
+      inactivityWarnings: inactivity,
       timestamp: new Date().toISOString(),
     };
   }
@@ -145,6 +152,8 @@ export class WhatsAppWebhookController {
       this.sendFailCountByPhone.clear();
       this.rebufferCount.clear();
       this.activeClientByPhone.clear();
+      this.inactivityTimers.forEach((v) => clearTimeout(v.timer));
+      this.inactivityTimers.clear();
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
@@ -152,6 +161,7 @@ export class WhatsAppWebhookController {
     this.sendFailCountByPhone.delete(phone);
     this.rebufferCount.delete(phone);
     this.activeClientByPhone.delete(phone);
+    this.clearInactivityTimer(phone);
     this.chatService.clearSession(`wa-${phone}`);
     this.logger.log(`Channel ${phone} reset`);
     return { reset: phone };
@@ -197,6 +207,7 @@ export class WhatsAppWebhookController {
         this.processingLock.delete(phone);
         this.sendFailCountByPhone.delete(phone);
         this.rebufferCount.delete(phone);
+        this.clearInactivityTimer(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -222,11 +233,13 @@ export class WhatsAppWebhookController {
         actualText = zapflowParsed.clientMessage;
         if (!currentOwner) {
           actualName = zapflowParsed.clientName;
-        } else if (currentOwner.toLowerCase() === zapflowParsed.clientName.toLowerCase()) {
+        } else if (this.isSameClient(currentOwner, zapflowParsed.clientName)) {
           actualName = currentOwner;
         } else {
           actualName = currentOwner;
-          actualText = `[Mensagem encaminhada de ${zapflowParsed.clientName}]: ${zapflowParsed.clientMessage}`;
+          this.logger.warn(
+            `Name mismatch on ${phone}: owner="${currentOwner}", msg="${zapflowParsed.clientName}". Passing message through without forwarded tag.`,
+          );
         }
       } else {
         actualName = currentOwner || name;
@@ -235,6 +248,7 @@ export class WhatsAppWebhookController {
 
       this.logger.log(`WhatsApp from ${actualName} (via ${phone}): ${actualText.slice(0, 80)}`);
 
+      this.clearInactivityTimer(phone);
       this.bufferMessage(phone, actualName, actualText);
     } catch (err) {
       this.logger.error(`Webhook processing error: ${err instanceof Error ? err.stack : err}`);
@@ -513,28 +527,11 @@ export class WhatsAppWebhookController {
         return;
       }
 
-      const paragraphs = response.reply
-        .split(/\n{2,}/)
-        .map((p) => p.trim())
-        .filter(Boolean);
+      const cleanReply = this.sanitizeForWhatsApp(response.reply);
+      const sent = await this.sendWithRetry(phone, cleanReply, 3);
+      this.logger.log(`sendText to ${phone}: ${sent ? 'ok' : 'FAILED after retries'}`);
 
-      let allSent = true;
-      for (let i = 0; i < paragraphs.length; i++) {
-        if (i > 0) {
-          await this.delay(1500);
-          this.uazapi.sendTyping(phone, 2000);
-          await this.delay(2000);
-        }
-        const sent = await this.sendWithRetry(phone, paragraphs[i], 2);
-        this.logger.log(`sendText to ${phone} part ${i + 1}/${paragraphs.length}: ${sent ? 'ok' : 'FAILED after retries'}`);
-
-        if (!sent) {
-          allSent = false;
-          break;
-        }
-      }
-
-      if (!allSent) {
+      if (!sent) {
         this.logger.error(`Failed to deliver reply to ${phone} after retries. Notifying manager.`);
         this.sendPrimaryManagerOnly(
           `[FALHA ENVIO]\nO agente gerou resposta para *${buffered.customerName}* (${phone}) mas não conseguiu entregar via WhatsApp.\nResposta gerada: ${response.reply.slice(0, 300)}`,
@@ -544,7 +541,10 @@ export class WhatsAppWebhookController {
       }
 
       const displayName = this.agentName;
-      this.broadcastMirrorMessage(`*${displayName}*: ${response.reply}`);
+      if (sent) {
+        this.broadcastMirrorMessage(`*${displayName}*: ${cleanReply}`);
+        this.resetInactivityTimer(phone);
+      }
 
       if (response.managerNotifications?.length > 0) {
         for (const notif of response.managerNotifications) {
@@ -689,6 +689,114 @@ export class WhatsAppWebhookController {
 
   private jidToPhone(jid: string): string {
     return this.normalizePhone(jid);
+  }
+
+  private resetInactivityTimer(phone: string): void {
+    const existing = this.inactivityTimers.get(phone);
+    if (existing) {
+      clearTimeout(existing.timer);
+    }
+    this.startInactivityTimer(phone, 0);
+  }
+
+  private clearInactivityTimer(phone: string): void {
+    const existing = this.inactivityTimers.get(phone);
+    if (existing) {
+      clearTimeout(existing.timer);
+      this.inactivityTimers.delete(phone);
+    }
+  }
+
+  private async startInactivityTimer(phone: string, warningsSent: number): Promise<void> {
+    const config = await this.agentConfig.getConfig();
+    const timeoutMs = config?.inactivityTimeoutMs ?? 300000;
+    const maxWarnings = config?.inactivityMaxWarnings ?? 3;
+    const messages: string[] = (config as any)?.inactivityMessages ?? [
+      'Olá, ainda está por aí? Estou aqui caso precise de ajuda.',
+      'Tudo bem? Ainda estou à disposição para te ajudar.',
+      'Como não recebi retorno, vou encerrar este atendimento. Caso precise, é só abrir um novo chamado que estaremos sempre à disposição!',
+    ];
+
+    if (timeoutMs <= 0) return;
+
+    const timer = setTimeout(async () => {
+      const clientName = this.activeClientByPhone.get(phone) || phone;
+      const msgIndex = Math.min(warningsSent, messages.length - 1);
+      const inactivityMsg = messages[msgIndex] || messages[messages.length - 1];
+
+      this.logger.log(`Inactivity warning #${warningsSent + 1}/${maxWarnings} for ${phone} (${clientName})`);
+
+      const sent = await this.sendWithRetry(phone, this.sanitizeForWhatsApp(inactivityMsg), 2);
+      if (sent) {
+        const displayName = this.agentName;
+        this.broadcastMirrorMessage(`*${displayName}*: ${inactivityMsg}`);
+      }
+
+      if (warningsSent + 1 >= maxWarnings) {
+        this.logger.log(`Max inactivity warnings reached for ${phone}. Closing session.`);
+        this.inactivityTimers.delete(phone);
+        this.chatService.clearSession(`wa-${phone}`);
+        this.activeClientByPhone.delete(phone);
+        this.sendPrimaryManagerOnly(
+          `[INATIVIDADE]\nCliente *${clientName}* (${phone}) não respondeu após ${maxWarnings} tentativas.\nSessão encerrada automaticamente.`,
+        );
+      } else {
+        this.startInactivityTimer(phone, warningsSent + 1);
+      }
+    }, timeoutMs);
+
+    this.inactivityTimers.set(phone, { timer, warningsSent });
+  }
+
+  private static readonly NAME_NOISE = new Set([
+    'de', 'da', 'do', 'dos', 'das', 'e', 'a', 'o', 'em',
+  ]);
+
+  private static readonly NAME_TITLES = /\b(senhor|senhora|sr\.?|sra\.?|dr\.?|dra\.?)\b/gi;
+
+  private normalizeName(name: string): string {
+    return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(WhatsAppWebhookController.NAME_TITLES, '')
+      .replace(/[^a-z\s]/g, '')
+      .trim()
+      .replace(/\s+/g, ' ');
+  }
+
+  private isSameClient(nameA: string, nameB: string): boolean {
+    const a = this.normalizeName(nameA);
+    const b = this.normalizeName(nameB);
+
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+
+    const wordsA = a.split(' ').filter((w) => w.length >= 4 && !WhatsAppWebhookController.NAME_NOISE.has(w));
+    const wordsB = b.split(' ').filter((w) => w.length >= 4 && !WhatsAppWebhookController.NAME_NOISE.has(w));
+
+    for (const w of wordsA) {
+      if (wordsB.includes(w)) return true;
+    }
+
+    return false;
+  }
+
+  private sanitizeForWhatsApp(text: string): string {
+    let s = text;
+    s = s.replace(/[\u201C\u201D\u201E\u201F]/g, '"');
+    s = s.replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+    s = s.replace(/[\u2014\u2013]/g, '-');
+    s = s.replace(/\u2026/g, '...');
+    s = s.replace(/\*\*(.+?)\*\*/g, '$1');
+    s = s.replace(/__(.+?)__/g, '$1');
+    s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '$1');
+    s = s.replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/g, '$1');
+    s = s.replace(/`([^`]+)`/g, '$1');
+    s = s.replace(/^#{1,6}\s+/gm, '');
+    s = s.replace(/^[-*]\s+/gm, '');
+    s = s.replace(/\n{3,}/g, '\n\n');
+    return s.trim();
   }
 
   private async sendWithRetry(phone: string, text: string, maxRetries: number): Promise<boolean> {
