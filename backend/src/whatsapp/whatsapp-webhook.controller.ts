@@ -807,22 +807,19 @@ export class WhatsAppWebhookController {
 
       const base64Url = `data:${media.mimetype};base64,${media.base64}`;
 
-      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: string } }> = [
-        {
-          type: 'image_url',
-          image_url: { url: base64Url, detail: 'low' },
-        },
-        {
-          type: 'text',
-          text: caption
-            ? `O cliente enviou esta imagem com a seguinte legenda: "${caption}". Descreva o que voce ve na imagem, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.`
-            : 'O cliente enviou esta imagem. Descreva o que voce ve, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.',
-        },
-      ];
+      const promptText = caption
+        ? `O cliente enviou esta imagem com a seguinte legenda: "${caption}". Descreva o que voce ve na imagem, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.`
+        : 'O cliente enviou esta imagem. Descreva o que voce ve, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.';
 
       const response = await this.openai.chat.completions.create({
         model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content }],
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: base64Url, detail: 'low' } },
+            { type: 'text', text: promptText },
+          ] as OpenAI.ChatCompletionContentPart[],
+        }],
         max_tokens: 300,
         temperature: 0.2,
       });
