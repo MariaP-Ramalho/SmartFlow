@@ -281,9 +281,6 @@ interface AgentConfigData {
   maxToolIterations: number;
   agentDisplayName: string;
   customInstructions: string;
-  inactivityTimeoutMs: number;
-  inactivityMaxWarnings: number;
-  inactivityMessages: string[];
   updatedAt?: string;
 }
 
@@ -1210,107 +1207,6 @@ export default function AgentPage() {
                         Ciclos de raciocínio + tools por mensagem
                       </p>
                     </div>
-                  </div>
-                </div>
-
-                {/* Inactivity Timeout */}
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <h3 className="text-base font-semibold text-slate-900 mb-1">
-                    Timeout de Inatividade do Cliente
-                  </h3>
-                  <p className="text-xs text-slate-400 mb-4">
-                    Após cada resposta do agente, se o cliente não responder dentro do tempo configurado,
-                    o agente envia lembretes automáticos. No último aviso, a sessão é encerrada.
-                  </p>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
-                        Tempo de espera (minutos)
-                      </label>
-                      <input
-                        type="number"
-                        value={Math.round((agentConfig.inactivityTimeoutMs || 300000) / 60000)}
-                        onChange={(e) =>
-                          setAgentConfig({
-                            ...agentConfig,
-                            inactivityTimeoutMs: Math.max(0, parseInt(e.target.value) || 0) * 60000,
-                          })
-                        }
-                        min={0}
-                        max={60}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        Intervalo entre cada aviso (0 = desativado)
-                      </p>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">
-                        Número de avisos
-                      </label>
-                      <input
-                        type="number"
-                        value={agentConfig.inactivityMaxWarnings || 3}
-                        onChange={(e) =>
-                          setAgentConfig({
-                            ...agentConfig,
-                            inactivityMaxWarnings: Math.max(1, parseInt(e.target.value) || 3),
-                          })
-                        }
-                        min={1}
-                        max={10}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        No último aviso a sessão é encerrada
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    <label className="block text-sm font-medium text-slate-700">
-                      Mensagens de aviso
-                    </label>
-                    {(agentConfig.inactivityMessages || []).map((msg, idx) => (
-                      <div key={idx} className="flex items-start gap-2">
-                        <span className="mt-2 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-500">
-                          {idx + 1}
-                        </span>
-                        <textarea
-                          value={msg}
-                          onChange={(e) => {
-                            const updated = [...(agentConfig.inactivityMessages || [])];
-                            updated[idx] = e.target.value;
-                            setAgentConfig({ ...agentConfig, inactivityMessages: updated });
-                          }}
-                          rows={2}
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                        />
-                        {(agentConfig.inactivityMessages || []).length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = (agentConfig.inactivityMessages || []).filter((_, i) => i !== idx);
-                              setAgentConfig({ ...agentConfig, inactivityMessages: updated });
-                            }}
-                            className="mt-2 text-xs text-red-400 hover:text-red-600"
-                          >
-                            Remover
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAgentConfig({
-                          ...agentConfig,
-                          inactivityMessages: [...(agentConfig.inactivityMessages || []), ""],
-                        })
-                      }
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      + Adicionar mensagem
-                    </button>
                   </div>
                 </div>
 

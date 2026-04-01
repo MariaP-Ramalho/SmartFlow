@@ -79,8 +79,6 @@ export class WhatsAppWebhookController {
   private readonly sendFailCountByPhone = new Map<string, number>();
   /** Tracks how many times a message was re-buffered due to lock contention. */
   private readonly rebufferCount = new Map<string, number>();
-  /** Inactivity timers: phone → { timer, warningsSent } */
-  private readonly inactivityTimers = new Map<string, { timer: ReturnType<typeof setTimeout>; warningsSent: number }>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -128,17 +126,12 @@ export class WhatsAppWebhookController {
     this.processingLock.forEach((start, phone) => {
       locks[phone] = Math.round((now - start) / 1000);
     });
-    const inactivity: Record<string, number> = {};
-    this.inactivityTimers.forEach((v, phone) => {
-      inactivity[phone] = v.warningsSent;
-    });
     return {
       connected: this.uazapi.isConnected,
       bufferedConversations: this.messageBuffer.size,
       processingLocks: locks,
       activeClients: Object.fromEntries(this.activeClientByPhone),
       sendFailCounts: Object.fromEntries(this.sendFailCountByPhone),
-      inactivityWarnings: inactivity,
       timestamp: new Date().toISOString(),
     };
   }
@@ -160,8 +153,6 @@ export class WhatsAppWebhookController {
       this.sendFailCountByPhone.clear();
       this.rebufferCount.clear();
       this.activeClientByPhone.clear();
-      this.inactivityTimers.forEach((v) => clearTimeout(v.timer));
-      this.inactivityTimers.clear();
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
@@ -169,7 +160,6 @@ export class WhatsAppWebhookController {
     this.sendFailCountByPhone.delete(phone);
     this.rebufferCount.delete(phone);
     this.activeClientByPhone.delete(phone);
-    this.clearInactivityTimer(phone);
     this.chatService.clearSession(`wa-${phone}`);
     this.logger.log(`Channel ${phone} reset`);
     return { reset: phone };
@@ -233,7 +223,6 @@ export class WhatsAppWebhookController {
         this.processingLock.delete(phone);
         this.sendFailCountByPhone.delete(phone);
         this.rebufferCount.delete(phone);
-        this.clearInactivityTimer(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -274,7 +263,6 @@ export class WhatsAppWebhookController {
 
       this.logger.log(`WhatsApp from ${actualName} (via ${phone}): ${actualText.slice(0, 80)}`);
 
-      this.clearInactivityTimer(phone);
       this.bufferMessage(phone, actualName, actualText);
     } catch (err) {
       this.logger.error(`Webhook processing error: ${err instanceof Error ? err.stack : err}`);
@@ -579,7 +567,6 @@ export class WhatsAppWebhookController {
       const displayName = this.agentName;
       if (sent) {
         this.broadcastMirrorMessage(`*${displayName}*: ${cleanReply}`);
-        this.resetInactivityTimer(phone);
       }
 
       if (response.managerNotifications?.length > 0) {
@@ -591,8 +578,7 @@ export class WhatsAppWebhookController {
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
 
           if (notif.reason === 'issue_resolved') {
-            this.clearInactivityTimer(phone);
-            this.logger.log(`Issue resolved for ${phone}. Inactivity timer cleared. Notifying managers to close atendimento.`);
+            this.logger.log(`Issue resolved for ${phone}. Notifying managers to close atendimento.`);
             const closeMsg =
               `[ATENDIMENTO RESOLVIDO]\n` +
               `Cliente: *${buffered.customerName}* (${phone})\n` +
@@ -753,63 +739,6 @@ export class WhatsAppWebhookController {
 
   private jidToPhone(jid: string): string {
     return this.normalizePhone(jid);
-  }
-
-  private resetInactivityTimer(phone: string): void {
-    const existing = this.inactivityTimers.get(phone);
-    if (existing) {
-      clearTimeout(existing.timer);
-    }
-    this.startInactivityTimer(phone, 0);
-  }
-
-  private clearInactivityTimer(phone: string): void {
-    const existing = this.inactivityTimers.get(phone);
-    if (existing) {
-      clearTimeout(existing.timer);
-      this.inactivityTimers.delete(phone);
-    }
-  }
-
-  private async startInactivityTimer(phone: string, warningsSent: number): Promise<void> {
-    const config = await this.agentConfig.getConfig();
-    const timeoutMs = config?.inactivityTimeoutMs ?? 600000;
-    const maxWarnings = config?.inactivityMaxWarnings ?? 3;
-    const messages: string[] = (config as any)?.inactivityMessages ?? [
-      'Olá, ainda está por aí? Estou aqui caso precise de ajuda.',
-      'Tudo bem? Ainda estou à disposição para te ajudar.',
-      'Como não recebi retorno, vou encerrar este atendimento. Caso precise, é só abrir um novo chamado que estaremos sempre à disposição!',
-    ];
-
-    if (timeoutMs <= 0) return;
-
-    const timer = setTimeout(async () => {
-      const clientName = this.activeClientByPhone.get(phone) || phone;
-      const msgIndex = Math.min(warningsSent, messages.length - 1);
-      const inactivityMsg = messages[msgIndex] || messages[messages.length - 1];
-
-      this.logger.log(`Inactivity warning #${warningsSent + 1}/${maxWarnings} for ${phone} (${clientName})`);
-
-      const sent = await this.sendWithRetry(phone, this.sanitizeForWhatsApp(inactivityMsg), 2);
-      if (sent) {
-        const displayName = this.agentName;
-        this.broadcastMirrorMessage(`*${displayName}*: ${inactivityMsg}`);
-      }
-
-      if (warningsSent + 1 >= maxWarnings) {
-        this.logger.log(`Max inactivity warnings reached for ${phone}. Closing session.`);
-        this.inactivityTimers.delete(phone);
-        this.chatService.clearSession(`wa-${phone}`);
-        this.activeClientByPhone.delete(phone);
-        this.sendPrimaryManagerOnly(
-          `[INATIVIDADE]\nCliente *${clientName}* (${phone}) não respondeu após ${maxWarnings} tentativas.\nSessão encerrada automaticamente.`,
-        );
-      } else {
-        this.startInactivityTimer(phone, warningsSent + 1);
-      }
-    }, timeoutMs);
-
-    this.inactivityTimers.set(phone, { timer, warningsSent });
   }
 
   private static readonly NAME_NOISE = new Set([
