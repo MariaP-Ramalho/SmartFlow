@@ -90,6 +90,30 @@ export class UazapiService implements OnModuleInit {
     }
   }
 
+  async downloadMedia(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
+    const cfg = this.getAxiosConfig();
+    if (!cfg) return null;
+    try {
+      const resp = await axios.post(
+        `${cfg.baseUrl}/chat/downloadMedia`,
+        { messageId },
+        { headers: cfg.headers, timeout: 30000 },
+      );
+      const data = resp.data;
+      const base64 = data?.base64 || data?.data || data?.media || null;
+      const mimetype = data?.mimetype || data?.mimeType || 'image/jpeg';
+      if (!base64) {
+        this.logger.warn(`downloadMedia for ${messageId}: no base64 in response keys=${Object.keys(data || {})}`);
+        return null;
+      }
+      this.logger.log(`Media downloaded for ${messageId}: ${mimetype} (${Math.round(base64.length / 1024)}KB base64)`);
+      return { base64, mimetype };
+    } catch (err: any) {
+      this.logger.error(`Failed to download media ${messageId}: status=${err?.response?.status} msg=${err?.message}`);
+      return null;
+    }
+  }
+
   async testConnection(): Promise<{ ok: boolean; status?: number; error?: string }> {
     const cfg = this.getAxiosConfig();
     if (!cfg) return { ok: false, error: 'Uazapi not configured' };
