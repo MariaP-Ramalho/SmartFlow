@@ -578,13 +578,22 @@ export class WhatsAppWebhookController {
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
 
           if (notif.reason === 'issue_resolved') {
-            this.logger.log(`Issue resolved for ${phone}. Notifying managers to close atendimento.`);
+            this.logger.log(`Issue resolved for ${phone}. Sending @zapflow finalization command.`);
+
+            const zapflowCmd = `@zapflow finalizar atendimento ${notif.message}`;
+            this.uazapi.sendText(phone, zapflowCmd).then((ok) => {
+              if (ok) {
+                this.logger.log(`ZapFlow finalization command sent to ${phone}`);
+              } else {
+                this.logger.error(`Failed to send ZapFlow finalization command to ${phone}`);
+              }
+            });
+
             const closeMsg =
               `[ATENDIMENTO RESOLVIDO]\n` +
               `Cliente: *${buffered.customerName}* (${phone})\n` +
-              `${notif.message}\n` +
-              (notif.customerSummary ? `Resumo: ${notif.customerSummary}\n` : '') +
-              `Por favor, encerrem o atendimento na interface do ZapFlow.`;
+              `${notif.message}` +
+              (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
             this.sendClosureNotification(closeMsg);
           } else {
             this.sendPrimaryManagerOnly(notifMsg);
