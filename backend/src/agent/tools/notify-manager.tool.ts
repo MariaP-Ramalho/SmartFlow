@@ -19,6 +19,7 @@ export class NotifyManagerTool implements AgentTool {
             'needs_system_access',
             'client_requested_human',
             'max_attempts_reached',
+            'issue_resolved',
             'other',
           ],
           description: 'Motivo da notificação',

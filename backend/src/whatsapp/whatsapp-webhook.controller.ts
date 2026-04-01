@@ -68,7 +68,7 @@ export class WhatsAppWebhookController {
     string,
     { texts: string[]; customerName: string; systemName?: string; timer: ReturnType<typeof setTimeout> }
   >();
-  private readonly BUFFER_DELAY_MS = 4000;
+  private readonly BUFFER_DELAY_MS = 10000;
   private readonly PROCESSING_TIMEOUT_MS = 120_000; // 2 min max per chat call
   private readonly processingLock = new Map<string, number>(); // phone → start timestamp
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];
@@ -553,7 +553,20 @@ export class WhatsAppWebhookController {
             `Cliente: *${buffered.customerName}* (${phone})\n` +
             `${notif.message}` +
             (notif.customerSummary ? `\nResumo: ${notif.customerSummary}` : '');
-          this.sendPrimaryManagerOnly(notifMsg);
+
+          if (notif.reason === 'issue_resolved') {
+            this.clearInactivityTimer(phone);
+            this.logger.log(`Issue resolved for ${phone}. Inactivity timer cleared. Notifying managers to close atendimento.`);
+            const closeMsg =
+              `[ATENDIMENTO RESOLVIDO]\n` +
+              `Cliente: *${buffered.customerName}* (${phone})\n` +
+              `${notif.message}\n` +
+              (notif.customerSummary ? `Resumo: ${notif.customerSummary}\n` : '') +
+              `Por favor, encerrem o atendimento na interface do ZapFlow.`;
+            this.sendClosureNotification(closeMsg);
+          } else {
+            this.sendPrimaryManagerOnly(notifMsg);
+          }
         }
       }
 
@@ -593,6 +606,7 @@ export class WhatsAppWebhookController {
       needs_system_access: 'PRECISA ACESSO AO SISTEMA',
       client_requested_human: 'CLIENTE PEDIU HUMANO',
       max_attempts_reached: 'MÁXIMO DE TENTATIVAS',
+      issue_resolved: 'ATENDIMENTO RESOLVIDO',
       other: 'NOTIFICAÇÃO',
     };
     return labels[reason] || 'NOTIFICAÇÃO AGENTE';
@@ -672,6 +686,20 @@ export class WhatsAppWebhookController {
     });
   }
 
+  /** Notificação de encerramento: envia para todos os gestores de espelhamento (Cássio + Carolina + extras). */
+  private sendClosureNotification(text: string): void {
+    const phones = this.waConfig.getMirrorRecipientPhones();
+    if (phones.length === 0) {
+      this.logger.warn('No mirror recipients for closure notification');
+      return;
+    }
+    for (const phone of phones) {
+      this.uazapi.sendText(phone, text).catch((err) => {
+        this.logger.warn(`Failed to send closure notification to ${phone}: ${err}`);
+      });
+    }
+  }
+
   private extractText(data: UazapiWebhookPayload['data']): string | null {
     if (!data?.message) return null;
     if (data.message.conversation) return data.message.conversation;
@@ -709,7 +737,7 @@ export class WhatsAppWebhookController {
 
   private async startInactivityTimer(phone: string, warningsSent: number): Promise<void> {
     const config = await this.agentConfig.getConfig();
-    const timeoutMs = config?.inactivityTimeoutMs ?? 300000;
+    const timeoutMs = config?.inactivityTimeoutMs ?? 600000;
     const maxWarnings = config?.inactivityMaxWarnings ?? 3;
     const messages: string[] = (config as any)?.inactivityMessages ?? [
       'Olá, ainda está por aí? Estou aqui caso precise de ajuda.',
