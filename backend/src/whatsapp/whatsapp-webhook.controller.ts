@@ -1,10 +1,12 @@
 import { Controller, Post, Body, Get, HttpCode, Logger, Res, Query } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { Public } from '../auth/auth.guard';
 import { UazapiService } from './uazapi.service';
 import { ChatService } from '../agent/chat.service';
 import { AgentConfigService } from '../agent/agent-config.service';
 import { WhatsAppConfigService } from './whatsapp-config.service';
+import OpenAI from 'openai';
 
 interface UazapiWebhookPayload {
   // Uazapi v2 format (production)
@@ -98,12 +100,18 @@ export class WhatsAppWebhookController {
   /** Formato ZapFlow: "*Nome diz:*\n\nMensagem real do cliente" */
   private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
 
+  private readonly openai: OpenAI | null;
+
   constructor(
     private readonly uazapi: UazapiService,
     private readonly chatService: ChatService,
     private readonly agentConfig: AgentConfigService,
     private readonly waConfig: WhatsAppConfigService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY') || this.configService.get<string>('llm.openai.apiKey');
+    this.openai = apiKey ? new OpenAI({ apiKey }) : null;
+  }
 
   private get managerPhone(): string {
     return this.waConfig.getManagerPhone();
@@ -175,17 +183,17 @@ export class WhatsAppWebhookController {
     try {
       this.logger.debug(`Raw webhook payload: ${JSON.stringify(body).slice(0, 500)}`);
       const parsed = this.parsePayload(body);
-      const { phone, name, text, messageId, remoteJid } = parsed;
+      const { phone, name, text, messageId, remoteJid, mediaType } = parsed;
 
       this.recentPayloads.push({
         ts: new Date().toISOString(),
         payload: JSON.parse(JSON.stringify(body)),
-        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid },
+        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid, mediaType },
       });
       if (this.recentPayloads.length > 20) this.recentPayloads.shift();
 
-      if (!phone || !text) {
-        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
+      if (!phone || (!text && !mediaType)) {
+        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, media=${mediaType}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
         return;
       }
 
@@ -193,11 +201,29 @@ export class WhatsAppWebhookController {
         this.uazapi.markAsRead(remoteJid, messageId);
       }
 
+      // --- Image processing ---
+      let effectiveText = text || '';
+      if (mediaType === 'image' && messageId) {
+        const imageDesc = await this.processImage(messageId, text || undefined);
+        if (imageDesc) {
+          effectiveText = imageDesc;
+          this.logger.log(`Image processed for ${phone}: "${imageDesc.slice(0, 80)}"`);
+        } else if (!text) {
+          this.logger.warn(`Image from ${phone} could not be analyzed and has no caption. Asking client to describe.`);
+          const fallback = 'Recebi sua imagem, mas não consegui visualizar. Pode descrever o que aparece na tela?';
+          const sent = await this.sendWithRetry(phone, fallback, 2);
+          if (sent) {
+            this.broadcastMirrorMessage(`*${this.agentName}*: ${fallback}`);
+          }
+          return;
+        }
+      }
+
       // --- ZapFlow message parsing ---
-      const zapflowParsed = this.parseZapFlowMessage(text);
+      const zapflowParsed = this.parseZapFlowMessage(effectiveText);
 
       if (zapflowParsed.isSystemMessage) {
-        this.logger.debug(`Ignored ZapFlow system message: "${text.slice(0, 80)}"`);
+        this.logger.debug(`Ignored ZapFlow system message: "${effectiveText.slice(0, 80)}"`);
         return;
       }
 
@@ -243,7 +269,7 @@ export class WhatsAppWebhookController {
         }
       } else {
         actualName = currentOwner || name;
-        actualText = text;
+        actualText = effectiveText;
       }
 
       this.logger.log(`WhatsApp from ${actualName} (via ${phone}): ${actualText.slice(0, 80)}`);
@@ -350,21 +376,27 @@ export class WhatsAppWebhookController {
     return { ok: allOk, steps };
   }
 
+  private static readonly IMAGE_TYPES = new Set(['image', 'imageMessage']);
+
   private parsePayload(body: UazapiWebhookPayload): {
     phone: string | null;
     name: string;
     text: string | null;
     messageId: string | null;
     remoteJid: string | null;
+    mediaType: string | null;
   } {
-    const empty = { phone: null, name: '', text: null, messageId: null, remoteJid: null };
+    const empty = { phone: null, name: '', text: null, messageId: null, remoteJid: null, mediaType: null };
 
     // Uazapi v2 format (EventType + message object)
     if (body.EventType && body.message) {
       if (body.message.fromMe || body.message.wasSentByApi || body.message.isGroup) return empty;
 
       const text = body.message.text || body.message.content || null;
-      if (!text) return empty;
+      const msgType = body.message.messageType || body.message.type || null;
+      const isMedia = msgType && WhatsAppWebhookController.IMAGE_TYPES.has(msgType);
+
+      if (!text && !isMedia) return empty;
 
       const rawPhone =
         body.chat?.phone ||
@@ -386,6 +418,7 @@ export class WhatsAppWebhookController {
         text,
         messageId: body.message.messageid || null,
         remoteJid: body.message.chatid || null,
+        mediaType: isMedia ? 'image' : null,
       };
     }
 
@@ -398,6 +431,7 @@ export class WhatsAppWebhookController {
         text: body.body,
         messageId: body.messageId || null,
         remoteJid: body.remoteJid,
+        mediaType: null,
       };
     }
 
@@ -413,7 +447,8 @@ export class WhatsAppWebhookController {
     if (!data?.key || data.key.fromMe) return empty;
 
     const text = this.extractText(data);
-    if (!text) return empty;
+    const hasImage = !!data.message?.imageMessage;
+    if (!text && !hasImage) return empty;
 
     const remoteJid = data.key.remoteJid || '';
     const phone = this.jidToPhone(remoteJid);
@@ -424,6 +459,7 @@ export class WhatsAppWebhookController {
       text,
       messageId: data.key.id || null,
       remoteJid,
+      mediaType: hasImage ? 'image' : null,
     };
   }
 
@@ -825,6 +861,55 @@ export class WhatsAppWebhookController {
     s = s.replace(/^[-*]\s+/gm, '');
     s = s.replace(/\n{3,}/g, '\n\n');
     return s.trim();
+  }
+
+  private async processImage(messageId: string, caption?: string): Promise<string | null> {
+    if (!this.openai) {
+      this.logger.warn('OpenAI not configured — cannot analyze image');
+      return caption ? `[Imagem enviada] ${caption}` : null;
+    }
+
+    try {
+      const media = await this.uazapi.downloadMedia(messageId);
+      if (!media) {
+        this.logger.warn(`Could not download media for message ${messageId}`);
+        return caption ? `[Imagem enviada] ${caption}` : null;
+      }
+
+      const base64Url = `data:${media.mimetype};base64,${media.base64}`;
+
+      const content: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string; detail: string } }> = [
+        {
+          type: 'image_url',
+          image_url: { url: base64Url, detail: 'low' },
+        },
+        {
+          type: 'text',
+          text: caption
+            ? `O cliente enviou esta imagem com a seguinte legenda: "${caption}". Descreva o que voce ve na imagem, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.`
+            : 'O cliente enviou esta imagem. Descreva o que voce ve, focando em elementos relevantes para suporte tecnico (telas de sistema, erros, mensagens). Seja conciso em 2-3 frases.',
+        },
+      ];
+
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content }],
+        max_tokens: 300,
+        temperature: 0.2,
+      });
+
+      const description = response.choices?.[0]?.message?.content?.trim();
+      if (!description) {
+        this.logger.warn('Vision API returned empty description');
+        return caption ? `[Imagem enviada] ${caption}` : null;
+      }
+
+      const prefix = caption ? `[Imagem enviada com legenda: "${caption}"]` : '[Imagem enviada pelo cliente]';
+      return `${prefix} Descricao da imagem: ${description}`;
+    } catch (err: any) {
+      this.logger.error(`Vision analysis failed: ${err?.message}`);
+      return caption ? `[Imagem enviada] ${caption}` : null;
+    }
   }
 
   private async sendWithRetry(phone: string, text: string, maxRetries: number): Promise<boolean> {
