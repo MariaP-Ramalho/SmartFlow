@@ -1,4 +1,5 @@
 import { Module, OnModuleInit } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TicketsModule } from '../tickets/tickets.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
@@ -27,6 +28,7 @@ import { DailyReportService } from './daily-report.service';
 
 @Module({
   imports: [
+    ConfigModule,
     MongooseModule.forFeature([
       { name: ChatSession.name, schema: ChatSessionSchema },
       { name: AgentConfig.name, schema: AgentConfigSchema },
