@@ -83,6 +83,22 @@ export class ChatService {
     }
   }
 
+  injectAnalystGuidance(sessionId: string, analystName: string, message: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      this.logger.warn(`injectAnalystGuidance: session ${sessionId} not found`);
+      return;
+    }
+    const guidanceContent = `[ORIENTACAO INTERNA - ${analystName}]: ${message}`;
+    session.conversationHistory.push({ role: 'analyst_guidance', content: guidanceContent });
+    this.logger.log(`Analyst guidance injected into ${sessionId}: "${message.slice(0, 80)}"`);
+  }
+
+  getConversationHistory(sessionId: string): { role: string; content: string }[] | null {
+    const session = this.sessions.get(sessionId);
+    return session ? [...session.conversationHistory] : null;
+  }
+
   async chat(input: ChatInput): Promise<ChatResponse> {
     const startTime = Date.now();
     const steps: ReasoningStep[] = [];
@@ -126,10 +142,14 @@ export class ChatService {
 
     session.messages = [{ role: 'system', content: systemPrompt }];
     for (const msg of session.conversationHistory) {
-      session.messages.push({
-        role: msg.role === 'customer' ? 'user' : 'assistant',
-        content: msg.content,
-      });
+      if (msg.role === 'analyst_guidance') {
+        session.messages.push({ role: 'system', content: msg.content });
+      } else {
+        session.messages.push({
+          role: msg.role === 'customer' ? 'user' : 'assistant',
+          content: msg.content,
+        });
+      }
     }
 
     steps.push({

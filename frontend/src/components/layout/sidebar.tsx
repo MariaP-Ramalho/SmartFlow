@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Settings,
   Users,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
   { label: "Agente", href: "/agent", icon: Bot },
   { label: "Atendimentos", href: "/tickets", icon: Ticket },
+  { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
   { label: "Auditoria", href: "/audit", icon: FileText },
   { label: "Base de Conhecimento", href: "/knowledge", icon: BookOpen },
   { label: "Usuários", href: "/users", icon: Users, adminOnly: true },

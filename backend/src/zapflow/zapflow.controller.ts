@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Res, Header } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Response } from 'express';
 import { ZapFlowPgService } from './zapflow-pg.service';
 
 @ApiTags('zapflow')
@@ -59,6 +60,140 @@ export class ZapFlowController {
       page: pg,
     });
     return { data: result.data, total: result.total, page: pg, limit: lim };
+  }
+
+  @Get('relatorio/agente-id')
+  @ApiOperation({ summary: 'Resolve the agent tecnico ID by name' })
+  async resolveAgentId(@Query('name') name?: string) {
+    const agentName = name || 'Renato Solves';
+    const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+    const match = tecnicos.find(
+      (t) => t.z90_tec_nome.toLowerCase().trim() === agentName.toLowerCase().trim(),
+    );
+    if (match) return { tecnicoId: match.z90_tec_id, nome: match.z90_tec_nome };
+    const partial = tecnicos.find(
+      (t) => t.z90_tec_nome.toLowerCase().includes(agentName.split(' ')[0].toLowerCase()),
+    );
+    if (partial) return { tecnicoId: partial.z90_tec_id, nome: partial.z90_tec_nome };
+    return { tecnicoId: null, nome: null, error: 'Técnico não encontrado' };
+  }
+
+  @Get('relatorio/agente')
+  @ApiOperation({ summary: 'Report: all atendimentos the agent participated in' })
+  @ApiQuery({ name: 'tecnicoId', required: true, type: Number })
+  @ApiQuery({ name: 'dataInicio', required: false, type: String })
+  @ApiQuery({ name: 'dataFim', required: false, type: String })
+  @ApiQuery({ name: 'sistemaId', required: false, type: Number })
+  @ApiQuery({ name: 'statusId', required: false, type: Number })
+  @ApiQuery({ name: 'transferidos', required: false, type: Boolean })
+  @ApiQuery({ name: 'search', required: false, type: String })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async agentReport(
+    @Query('tecnicoId') tecnicoId: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+    @Query('sistemaId') sistemaId?: string,
+    @Query('statusId') statusId?: string,
+    @Query('transferidos') transferidos?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const tid = parseInt(tecnicoId, 10);
+    if (!Number.isFinite(tid)) return { error: 'tecnicoId is required' };
+
+    const result = await this.zapflow.getAgentAtendimentos(tid, {
+      dataInicio: dataInicio || undefined,
+      dataFim: dataFim || undefined,
+      sistemaId: sistemaId ? parseInt(sistemaId, 10) : undefined,
+      statusId: statusId ? parseInt(statusId, 10) : undefined,
+      apenasTransferidos: transferidos === 'true',
+      search: search?.trim() || undefined,
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 50,
+    });
+
+    return { data: result.data, total: result.total };
+  }
+
+  @Get('relatorio/agente/stats')
+  @ApiOperation({ summary: 'Daily stats for agent report' })
+  async agentDailyStats(
+    @Query('tecnicoId') tecnicoId: string,
+    @Query('date') date?: string,
+  ) {
+    const tid = parseInt(tecnicoId, 10);
+    if (!Number.isFinite(tid)) return { error: 'tecnicoId is required' };
+    const d = date || new Date().toISOString().split('T')[0];
+    return this.zapflow.getAgentDailyStats(tid, d);
+  }
+
+  @Get('relatorio/agente/export')
+  @ApiOperation({ summary: 'Export agent report as CSV' })
+  async exportAgentReport(
+    @Query('tecnicoId') tecnicoId: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+    @Query('sistemaId') sistemaId?: string,
+    @Query('statusId') statusId?: string,
+    @Query('transferidos') transferidos?: string,
+    @Query('search') search?: string,
+    @Res() res?: Response,
+  ) {
+    const tid = parseInt(tecnicoId, 10);
+    if (!Number.isFinite(tid) || !res) return;
+
+    const result = await this.zapflow.getAgentAtendimentos(tid, {
+      dataInicio: dataInicio || undefined,
+      dataFim: dataFim || undefined,
+      sistemaId: sistemaId ? parseInt(sistemaId, 10) : undefined,
+      statusId: statusId ? parseInt(statusId, 10) : undefined,
+      apenasTransferidos: transferidos === 'true',
+      search: search?.trim() || undefined,
+      limit: 5000,
+      page: 1,
+    });
+
+    const header = 'ID;Cliente;Sistema;Problema;Solução;Técnico Atual;Transferido;Data Abertura;Data Fechamento;Status';
+    const rows = result.data.map((r: any) => {
+      const fields = [
+        r.z90_ate_id,
+        this.csvEscape(r.cliente || ''),
+        this.csvEscape(r.sistema || ''),
+        this.csvEscape(r.z90_ate_resumo_do_problema || ''),
+        this.csvEscape(r.z90_ate_resumo_da_solucao || ''),
+        this.csvEscape(r.tecnico_atual || ''),
+        r.transferido ? 'Sim' : 'Não',
+        r.z90_ate_data_abertura || '',
+        r.z90_ate_data_fechamento || '',
+        this.statusIdToLabel(r.z90_ate_id_status_atendimento),
+      ];
+      return fields.join(';');
+    });
+
+    const csv = '\uFEFF' + [header, ...rows].join('\n');
+    const filename = `relatorio-agente-${dataInicio || 'inicio'}-${dataFim || 'fim'}.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+
+  private csvEscape(val: string): string {
+    if (val.includes(';') || val.includes('"') || val.includes('\n')) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  }
+
+  private statusIdToLabel(id: number): string {
+    switch (id) {
+      case 1: return 'Aberto';
+      case 2: return 'Em Andamento';
+      case 3: return 'Fechado';
+      default: return `Status ${id}`;
+    }
   }
 
   @Get('atendimentos/:id')

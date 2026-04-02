@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { ConfigService } from '@nestjs/config';
 import { ZapFlowPgService } from '../zapflow/zapflow-pg.service';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { AuditService } from '../audit/audit.service';
+import { ReferenceCaseService } from './reference-case.service';
 
 @Injectable()
 export class DailyReportService {
@@ -14,6 +16,8 @@ export class DailyReportService {
     private readonly knowledgeService: KnowledgeService,
     private readonly ticketsService: TicketsService,
     private readonly auditService: AuditService,
+    private readonly referenceCaseService: ReferenceCaseService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Cron('0 23 * * *')
@@ -25,6 +29,7 @@ export class DailyReportService {
 
       if (this.zapflow.isConnected) {
         await this.ingestResolvedCasesFromZapFlow();
+        await this.dailyAgentLearning();
       }
 
       this.logger.log('Daily report generation completed');
@@ -99,6 +104,130 @@ export class DailyReportService {
     });
 
     return ingested;
+  }
+
+  private async resolveAgentTecnicoId(): Promise<number | null> {
+    const explicitId = parseInt(this.configService.get<string>('AGENT_TECNICO_ID') || '0', 10);
+    if (explicitId > 0) return explicitId;
+
+    const agentName = this.configService.get<string>('AGENT_DISPLAY_NAME') || '';
+    if (!agentName) return null;
+
+    try {
+      const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+      const match = tecnicos.find(
+        (t) => t.z90_tec_nome.toLowerCase().trim() === agentName.toLowerCase().trim(),
+      );
+      if (match) {
+        this.logger.log(`Resolved agent tecnico ID: ${match.z90_tec_id} (${match.z90_tec_nome})`);
+        return match.z90_tec_id;
+      }
+      const partial = tecnicos.find(
+        (t) => t.z90_tec_nome.toLowerCase().includes(agentName.split(' ')[0].toLowerCase()),
+      );
+      if (partial) {
+        this.logger.log(`Resolved agent tecnico ID (partial match): ${partial.z90_tec_id} (${partial.z90_tec_nome})`);
+        return partial.z90_tec_id;
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to resolve agent tecnico ID: ${err?.message}`);
+    }
+    return null;
+  }
+
+  private async dailyAgentLearning(): Promise<void> {
+    const agentTecnicoId = await this.resolveAgentTecnicoId();
+    if (!agentTecnicoId) {
+      this.logger.warn('Could not resolve agent tecnico ID — skipping daily agent learning');
+      return;
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    this.logger.log(`Starting daily agent learning for tecnico ${agentTecnicoId}, date: ${today}`);
+
+    try {
+      const cases = await this.zapflow.getDailyCasesForLearning(agentTecnicoId, today);
+      if (cases.length === 0) {
+        this.logger.log('No cases found for today — nothing to learn');
+        return;
+      }
+
+      let transferredLearned = 0;
+      let resolvedLearned = 0;
+
+      for (const c of cases) {
+        const isTransferred = c.transferido === true || c.transferido === 't';
+        const isClosed = !!c.z90_ate_data_fechamento;
+
+        if (isTransferred && isClosed) {
+          const interacoes = await this.zapflow.getCaseInteractions(c.z90_ate_id, 40);
+
+          if (interacoes.length === 0) continue;
+
+          const conversation = interacoes.map((int: any) => {
+            const tipo = int.z90_int_id_tipo_remetente;
+            const role = tipo === 3 ? 'customer' : tipo === 2 ? 'assistant' : tipo === 1 ? 'assistant' : 'system';
+            return { role, content: int.z90_int_conteudo_mensagem || '' };
+          });
+
+          const problemSummary = c.z90_ate_resumo_do_problema || '';
+          const solutionSummary = c.z90_ate_resumo_da_solucao || '';
+
+          if (solutionSummary) {
+            await this.referenceCaseService.saveReferenceCase({
+              phone: `zapflow-${c.z90_ate_id}`,
+              customerName: c.entidade || 'Cliente',
+              systemName: c.sistema || '',
+              analystName: 'Analista Humano (aprendizado)',
+              conversation,
+              problemSummary,
+              solutionSummary,
+            });
+            transferredLearned++;
+          }
+        }
+
+        if (!isTransferred && isClosed && c.z90_ate_resumo_da_solucao) {
+          try {
+            await this.knowledgeService.ingest({
+              title: `Caso resolvido pelo agente #${c.z90_ate_id}: ${(c.z90_ate_resumo_do_problema || '').slice(0, 100)}`,
+              content: [
+                `Caso ZapFlow #${c.z90_ate_id}`,
+                `Sistema: ${c.sistema || 'N/A'}`,
+                `Entidade: ${c.entidade || 'N/A'}`,
+                `Problema: ${c.z90_ate_resumo_do_problema || 'N/A'}`,
+                `Solução: ${c.z90_ate_resumo_da_solucao || 'N/A'}`,
+              ].join('\n'),
+              category: c.sistema?.toLowerCase() || 'geral',
+              source: 'resolved_case' as any,
+              tags: ['agente', 'resolvido', c.sistema?.toLowerCase()].filter(Boolean),
+            });
+            resolvedLearned++;
+          } catch (err: any) {
+            this.logger.warn(`Failed to ingest resolved agent case ${c.z90_ate_id}: ${err?.message}`);
+          }
+        }
+      }
+
+      this.logger.log(
+        `Daily agent learning complete: ${cases.length} cases studied, ` +
+        `${transferredLearned} transferred cases learned, ${resolvedLearned} resolved cases reinforced`,
+      );
+
+      await this.auditService.log({
+        caseId: 'daily-learning',
+        action: 'daily_agent_learning',
+        actor: 'system',
+        details: {
+          date: today,
+          totalCases: cases.length,
+          transferredLearned,
+          resolvedLearned,
+        },
+      });
+    } catch (err: any) {
+      this.logger.error(`Daily agent learning failed: ${err?.message}`);
+    }
   }
 
   private async ingestResolvedCasesFromZapFlow(): Promise<number> {

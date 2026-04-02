@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ZapFlowPgService } from '../../zapflow/zapflow-pg.service';
+import { ReferenceCaseService } from '../reference-case.service';
 import { AgentTool, ToolDefinition, ToolResult, AgentContext } from './tool.interface';
 
 @Injectable()
@@ -9,9 +10,9 @@ export class PastCasesTool implements AgentTool {
   readonly definition: ToolDefinition = {
     name: 'search_past_cases',
     description:
-      'Search the ZapFlow database (15000+ closed cases) for past atendimentos with similar problems. ' +
-      'The tool automatically performs multi-layer search: first with system filter, then without, then with broader terms. ' +
-      'Returns the problem description and the solution that worked. USE THIS TOOL FIRST before answering any technical question.',
+      'Search for past atendimentos with similar problems. First checks high-quality reference cases (reviewed by senior analyst), ' +
+      'then searches ZapFlow database (15000+ closed cases) with multi-layer search. ' +
+      'Cases marked fonte_confiavel=true are top priority. USE THIS TOOL FIRST before answering any technical question.',
     parameters: {
       type: 'object',
       properties: {
@@ -37,34 +38,74 @@ export class PastCasesTool implements AgentTool {
     },
   };
 
-  constructor(private readonly zapflow: ZapFlowPgService) {}
+  constructor(
+    private readonly zapflow: ZapFlowPgService,
+    private readonly referenceCaseService: ReferenceCaseService,
+  ) {}
 
   async execute(args: Record<string, any>, _context: AgentContext): Promise<ToolResult> {
     try {
       const { keywords, system_name, include_interactions = false } = args;
       if (!keywords) return { success: false, error: 'keywords is required' };
 
+      const results: any[] = [];
+
+      // Priority layer: search reference cases (analyst-collaborated, high quality)
+      try {
+        const refCases = await this.referenceCaseService.searchReferenceCases(keywords, 3);
+        if (refCases.length > 0) {
+          this.logger.log(`Found ${refCases.length} reference case(s) for "${keywords}"`);
+          for (const rc of refCases) {
+            const entry: any = {
+              fonte_confiavel: true,
+              fonte: 'caso_referencia_gestor',
+              sistema: (rc as any).systemName || '',
+              entidade: (rc as any).entityName || '',
+              cliente: (rc as any).customerName || '',
+              problema: (rc as any).problemSummary || '',
+              solucao: (rc as any).solutionSummary || '',
+              analista_orientador: (rc as any).analystName || '',
+              data: (rc as any).createdAt,
+            };
+
+            if (include_interactions && (rc as any).conversation?.length > 0) {
+              entry.interacoes = (rc as any).conversation
+                .filter((m: any) => m.role !== 'analyst_guidance' || include_interactions)
+                .slice(0, 20)
+                .map((m: any) => ({
+                  de: m.role === 'customer' ? 'Cliente' : m.role === 'analyst_guidance' ? 'Gestor' : 'Analista',
+                  mensagem: m.content,
+                }));
+            }
+
+            results.push(entry);
+          }
+        }
+      } catch (refErr: any) {
+        this.logger.warn(`Reference case search failed: ${refErr?.message}`);
+      }
+
+      // Standard ZapFlow search
       const allCases = await this.multiLayerSearch(keywords, system_name);
 
-      if (allCases.length === 0) {
+      if (allCases.length === 0 && results.length === 0) {
         return {
           success: true,
           data: {
             count: 0,
-            search_layers_tried: 'all (with system, without system, broader terms, keyword pairs)',
+            search_layers_tried: 'all (reference cases, with system, without system, broader terms, keyword pairs)',
             message: 'Nenhum caso encontrado em nenhuma camada de busca.',
             cases: [],
           },
         };
       }
 
-      const results: any[] = [];
-
       for (let i = 0; i < allCases.length; i++) {
         const c = allCases[i];
         const foiEncaminhadoParaDev = !!c.z90_ate_transbordo_dev;
         const bugSolucionado = !!c.z90_ate_bug_solucionado;
         const entry: any = {
+          fonte_confiavel: false,
           atendimento_id: c.z90_ate_id,
           sistema: c.sistema,
           entidade: c.entidade,
@@ -97,6 +138,9 @@ export class PastCasesTool implements AgentTool {
         data: {
           count: results.length,
           cases: results,
+          nota: results.some((r) => r.fonte_confiavel)
+            ? 'Casos marcados com fonte_confiavel=true são de atendimentos revisados pelo gestor Cássio e devem ser priorizados como referência.'
+            : undefined,
         },
       };
     } catch (error) {

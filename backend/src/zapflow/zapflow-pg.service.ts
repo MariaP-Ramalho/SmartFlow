@@ -422,6 +422,183 @@ export class ZapFlowPgService implements OnModuleInit {
     return rows;
   }
 
+  // ─── RELATÓRIO DO AGENTE ────────────────────────────────────
+
+  async getAgentAtendimentos(
+    tecnicoId: number,
+    filters?: {
+      dataInicio?: string;
+      dataFim?: string;
+      sistemaId?: number;
+      statusId?: number;
+      apenasTransferidos?: boolean;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{ data: any[]; total: number }> {
+    if (!this.mcp) return { data: [], total: 0 };
+
+    const limit = Math.min(200, filters?.limit || 50);
+    const page = Math.max(1, filters?.page || 1);
+    const offset = (page - 1) * limit;
+
+    const conditions: string[] = [];
+
+    if (filters?.dataInicio) {
+      conditions.push(`a.z90_ate_data_abertura >= ${this.esc(filters.dataInicio)}`);
+    }
+    if (filters?.dataFim) {
+      conditions.push(`a.z90_ate_data_abertura <= ${this.esc(filters.dataFim + ' 23:59:59')}`);
+    }
+    if (filters?.sistemaId != null && Number.isFinite(filters.sistemaId)) {
+      conditions.push(`a.z90_ate_id_sistema_suporte = ${this.esc(filters.sistemaId)}`);
+    }
+    if (filters?.statusId != null && Number.isFinite(filters.statusId)) {
+      conditions.push(`a.z90_ate_id_status_atendimento = ${this.esc(filters.statusId)}`);
+    }
+    if (filters?.apenasTransferidos) {
+      conditions.push(`a.z90_ate_id_tecnico_responsavel != ${this.esc(tecnicoId)}`);
+    }
+    if (filters?.search?.trim()) {
+      const like = `%${filters.search.trim().toLowerCase().replace(/'/g, "''")}%`;
+      conditions.push(`(
+        LOWER(COALESCE(a.z90_ate_resumo_do_problema, '')) LIKE ${this.esc(like)}
+        OR LOWER(COALESCE(e.z90_ent_razao_social, '')) LIKE ${this.esc(like)}
+        OR LOWER(COALESCE(s.z90_sis_nome_sistema, '')) LIKE ${this.esc(like)}
+        OR CAST(a.z90_ate_id AS TEXT) LIKE ${this.esc(`%${filters.search.trim()}%`)}
+      )`);
+    }
+
+    const whereClause = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+
+    const baseJoin = `
+      FROM z90_atendimentos a
+      LEFT JOIN z90_entidades e ON a.z90_ent_id = e.z90_ent_id
+      LEFT JOIN z90_sistemas_suporte s ON a.z90_ate_id_sistema_suporte = s.z90_sis_id
+      LEFT JOIN z90_tecnicos_suporte t ON a.z90_ate_id_tecnico_responsavel = t.z90_tec_id
+      WHERE a.z90_ate_id IN (
+        SELECT DISTINCT i.z90_ate_id
+        FROM z90_interacoes_atendimento i
+        WHERE i.z90_int_id_remetente_usuario IN (
+          SELECT z90_tec_id FROM z90_tecnicos_suporte WHERE z90_tec_id = ${this.esc(tecnicoId)}
+        )
+        OR i.z90_int_id_remetente_agente_ia IS NOT NULL
+        UNION
+        SELECT z90_ate_id FROM z90_atendimentos
+        WHERE z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}
+           OR z90_ate_id_agente_ia_inicial IS NOT NULL
+      )
+      ${whereClause}`;
+
+    const countSql = `SELECT COUNT(*)::bigint AS cnt ${baseJoin}`;
+    const dataSql = `
+      SELECT a.z90_ate_id, a.z90_ate_resumo_do_problema, a.z90_ate_data_abertura,
+             a.z90_ate_data_fechamento, a.z90_ate_id_status_atendimento,
+             a.z90_ate_resumo_da_solucao,
+             a.z90_ate_id_tecnico_responsavel,
+             a.z90_ate_transbordo_dev,
+             e.z90_ent_razao_social AS cliente,
+             s.z90_sis_nome_sistema AS sistema,
+             t.z90_tec_nome AS tecnico_atual,
+             CASE WHEN a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)} THEN false ELSE true END AS transferido
+      ${baseJoin}
+      ORDER BY a.z90_ate_data_abertura DESC
+      LIMIT ${this.esc(limit)} OFFSET ${this.esc(offset)}`;
+
+    const [countRes, dataRes] = await Promise.all([
+      this.safeQuery(countSql, 'agentReportCount'),
+      this.safeQuery(dataSql, 'agentReportData'),
+    ]);
+
+    const total = parseInt(String(countRes.rows[0]?.cnt ?? '0'), 10);
+    return { data: dataRes.rows, total };
+  }
+
+  async getAgentDailyStats(tecnicoId: number, date: string): Promise<Record<string, any>> {
+    if (!this.mcp) return {};
+
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + 1);
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+
+    const dateCond = `a.z90_ate_data_abertura >= ${this.esc(date)} AND a.z90_ate_data_abertura < ${this.esc(nextDateStr)}`;
+
+    const baseWhere = `WHERE a.z90_ate_id IN (
+      SELECT DISTINCT i.z90_ate_id FROM z90_interacoes_atendimento i
+      WHERE i.z90_int_id_remetente_usuario IN (
+        SELECT z90_tec_id FROM z90_tecnicos_suporte WHERE z90_tec_id = ${this.esc(tecnicoId)}
+      ) OR i.z90_int_id_remetente_agente_ia IS NOT NULL
+      UNION
+      SELECT z90_ate_id FROM z90_atendimentos
+      WHERE z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}
+         OR z90_ate_id_agente_ia_inicial IS NOT NULL
+    ) AND ${dateCond}`;
+
+    const [totalRes, resolvidosRes, transferidosRes, bugsRes] = await Promise.all([
+      this.safeQuery(
+        `SELECT COUNT(*) AS cnt FROM z90_atendimentos a ${baseWhere}`,
+        'dailyTotal',
+      ),
+      this.safeQuery(
+        `SELECT COUNT(*) AS cnt FROM z90_atendimentos a ${baseWhere} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}`,
+        'dailyResolvidos',
+      ),
+      this.safeQuery(
+        `SELECT COUNT(*) AS cnt FROM z90_atendimentos a ${baseWhere} AND a.z90_ate_id_tecnico_responsavel != ${this.esc(tecnicoId)}`,
+        'dailyTransferidos',
+      ),
+      this.safeQuery(
+        `SELECT COUNT(*) AS cnt FROM z90_atendimentos a ${baseWhere} AND a.z90_ate_transbordo_dev IS NOT NULL`,
+        'dailyBugs',
+      ),
+    ]);
+
+    return {
+      date,
+      totalAtendimentos: parseInt(totalRes.rows[0]?.cnt || '0', 10),
+      resolvidosPeloAgente: parseInt(resolvidosRes.rows[0]?.cnt || '0', 10),
+      transferidos: parseInt(transferidosRes.rows[0]?.cnt || '0', 10),
+      bugs: parseInt(bugsRes.rows[0]?.cnt || '0', 10),
+    };
+  }
+
+  async getDailyCasesForLearning(tecnicoId: number, date: string): Promise<any[]> {
+    if (!this.mcp) return [];
+
+    const nextDate = new Date(date);
+    nextDate.setDate(nextDate.getDate() + 1);
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+
+    const { rows } = await this.mcp.executeSelectQuery(`
+      SELECT a.z90_ate_id, a.z90_ate_resumo_do_problema, a.z90_ate_resumo_da_solucao,
+             a.z90_ate_data_abertura, a.z90_ate_data_fechamento,
+             a.z90_ate_id_tecnico_responsavel, a.z90_ate_transbordo_dev,
+             s.z90_sis_nome_sistema AS sistema, e.z90_ent_razao_social AS entidade,
+             CASE WHEN a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)} THEN false ELSE true END AS transferido
+      FROM z90_atendimentos a
+      LEFT JOIN z90_sistemas_suporte s ON a.z90_ate_id_sistema_suporte = s.z90_sis_id
+      LEFT JOIN z90_entidades e ON a.z90_ent_id = e.z90_ent_id
+      WHERE a.z90_ate_id IN (
+        SELECT DISTINCT i.z90_ate_id FROM z90_interacoes_atendimento i
+        WHERE i.z90_int_id_remetente_usuario IN (
+          SELECT z90_tec_id FROM z90_tecnicos_suporte WHERE z90_tec_id = ${this.esc(tecnicoId)}
+        ) OR i.z90_int_id_remetente_agente_ia IS NOT NULL
+        UNION
+        SELECT z90_ate_id FROM z90_atendimentos
+        WHERE z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}
+           OR z90_ate_id_agente_ia_inicial IS NOT NULL
+      )
+      AND a.z90_ate_data_abertura >= ${this.esc(date)}
+      AND a.z90_ate_data_abertura < ${this.esc(nextDateStr)}
+      ORDER BY
+        CASE WHEN a.z90_ate_id_tecnico_responsavel != ${this.esc(tecnicoId)} THEN 0 ELSE 1 END,
+        a.z90_ate_data_abertura ASC
+      LIMIT 100`);
+
+    return rows;
+  }
+
   // ─── SELEÇÃO DE ANALISTA PARA HANDOFF ───────────────────────
 
   async selectAnalystForHandoff(): Promise<ZapFlowTecnico | null> {
