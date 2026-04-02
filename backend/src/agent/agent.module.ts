@@ -6,6 +6,8 @@ import { PoliciesModule } from '../policies/policies.module';
 import { ZapFlowPgModule } from '../zapflow/zapflow-pg.module';
 import { ChatSession, ChatSessionSchema } from './schemas/chat-session.schema';
 import { AgentConfig, AgentConfigSchema } from './schemas/agent-config.schema';
+import { ReferenceCase, ReferenceCaseSchema } from './schemas/reference-case.schema';
+import { ReferenceCaseService } from './reference-case.service';
 import { ToolRegistry } from './tools/tool-registry';
 import { TicketTool } from './tools/ticket.tool';
 import { KnowledgeTool } from './tools/knowledge.tool';
@@ -28,6 +30,7 @@ import { DailyReportService } from './daily-report.service';
     MongooseModule.forFeature([
       { name: ChatSession.name, schema: ChatSessionSchema },
       { name: AgentConfig.name, schema: AgentConfigSchema },
+      { name: ReferenceCase.name, schema: ReferenceCaseSchema },
     ]),
     TicketsModule, KnowledgeModule, PoliciesModule, ZapFlowPgModule,
   ],
@@ -46,8 +49,9 @@ import { DailyReportService } from './daily-report.service';
     ChatService,
     AgentConfigService,
     DailyReportService,
+    ReferenceCaseService,
   ],
-  exports: [AgentService, ConversationService, ChatService, AgentConfigService],
+  exports: [AgentService, ConversationService, ChatService, AgentConfigService, ReferenceCaseService],
 })
 export class AgentModule implements OnModuleInit {
   constructor(

@@ -6,6 +6,7 @@ import { UazapiService } from './uazapi.service';
 import { ChatService } from '../agent/chat.service';
 import { AgentConfigService } from '../agent/agent-config.service';
 import { WhatsAppConfigService } from './whatsapp-config.service';
+import { ReferenceCaseService } from '../agent/reference-case.service';
 import OpenAI from 'openai';
 
 interface UazapiWebhookPayload {
@@ -79,6 +80,14 @@ export class WhatsAppWebhookController {
   private readonly sendFailCountByPhone = new Map<string, number>();
   /** Tracks how many times a message was re-buffered due to lock contention. */
   private readonly rebufferCount = new Map<string, number>();
+  /** Recent messages sent BY the agent (phone → last N text snippets) for detecting human analyst intervention. */
+  private readonly recentAgentSent = new Map<string, string[]>();
+  private readonly AGENT_SENT_HISTORY_SIZE = 20;
+  /** Cooldown after analyst intervention: phone → timestamp when cooldown expires. */
+  private readonly analystCooldown = new Map<string, number>();
+  private readonly ANALYST_COOLDOWN_MS = 30_000;
+  /** Tracks if an analyst collaborated during the current atendimento. */
+  private readonly analystCollaborated = new Map<string, boolean>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -106,6 +115,7 @@ export class WhatsAppWebhookController {
     private readonly agentConfig: AgentConfigService,
     private readonly waConfig: WhatsAppConfigService,
     private readonly configService: ConfigService,
+    private readonly referenceCaseService: ReferenceCaseService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY') || this.configService.get<string>('llm.openai.apiKey');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -132,6 +142,10 @@ export class WhatsAppWebhookController {
       processingLocks: locks,
       activeClients: Object.fromEntries(this.activeClientByPhone),
       sendFailCounts: Object.fromEntries(this.sendFailCountByPhone),
+      analystCooldowns: Object.fromEntries(
+        [...this.analystCooldown.entries()].map(([p, t]) => [p, Math.max(0, Math.round((t - now) / 1000))]),
+      ),
+      analystCollaborations: Object.fromEntries(this.analystCollaborated),
       timestamp: new Date().toISOString(),
     };
   }
@@ -153,6 +167,9 @@ export class WhatsAppWebhookController {
       this.sendFailCountByPhone.clear();
       this.rebufferCount.clear();
       this.activeClientByPhone.clear();
+      this.recentAgentSent.clear();
+      this.analystCooldown.clear();
+      this.analystCollaborated.clear();
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
@@ -160,6 +177,9 @@ export class WhatsAppWebhookController {
     this.sendFailCountByPhone.delete(phone);
     this.rebufferCount.delete(phone);
     this.activeClientByPhone.delete(phone);
+    this.recentAgentSent.delete(phone);
+    this.analystCooldown.delete(phone);
+    this.analystCollaborated.delete(phone);
     this.chatService.clearSession(`wa-${phone}`);
     this.logger.log(`Channel ${phone} reset`);
     return { reset: phone };
@@ -173,17 +193,36 @@ export class WhatsAppWebhookController {
     try {
       this.logger.debug(`Raw webhook payload: ${JSON.stringify(body).slice(0, 500)}`);
       const parsed = this.parsePayload(body);
-      const { phone, name, text, messageId, remoteJid, mediaType } = parsed;
+      const { phone, name, text, messageId, remoteJid, mediaType, isFromMe } = parsed;
 
       this.recentPayloads.push({
         ts: new Date().toISOString(),
         payload: JSON.parse(JSON.stringify(body)),
-        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid, mediaType },
+        parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid, mediaType, isFromMe },
       });
       if (this.recentPayloads.length > 20) this.recentPayloads.shift();
 
       if (!phone || (!text && !mediaType)) {
         this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, media=${mediaType}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
+        return;
+      }
+
+      // --- Detect fromMe messages: agent echo vs analyst intervention ---
+      if (isFromMe) {
+        const msgText = text || '';
+        if (this.isAgentEcho(phone, msgText)) {
+          this.logger.debug(`Ignored agent echo for ${phone}: "${msgText.slice(0, 60)}"`);
+          return;
+        }
+
+        this.logger.warn(`ANALYST INTERVENTION detected on ${phone}: "${msgText.slice(0, 80)}"`);
+        this.analystCooldown.set(phone, Date.now() + this.ANALYST_COOLDOWN_MS);
+        this.analystCollaborated.set(phone, true);
+
+        const sessionId = `wa-${phone}`;
+        this.chatService.injectAnalystGuidance(sessionId, 'Cássio (gestor)', msgText);
+
+        this.broadcastMirrorMessage(`*[Intervenção Cássio]* (${phone}): ${msgText}`);
         return;
       }
 
@@ -223,6 +262,9 @@ export class WhatsAppWebhookController {
         this.processingLock.delete(phone);
         this.sendFailCountByPhone.delete(phone);
         this.rebufferCount.delete(phone);
+        this.recentAgentSent.delete(phone);
+        this.analystCooldown.delete(phone);
+        this.analystCollaborated.delete(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -373,12 +415,15 @@ export class WhatsAppWebhookController {
     messageId: string | null;
     remoteJid: string | null;
     mediaType: string | null;
+    isFromMe: boolean;
   } {
-    const empty = { phone: null, name: '', text: null, messageId: null, remoteJid: null, mediaType: null };
+    const empty = { phone: null, name: '', text: null, messageId: null, remoteJid: null, mediaType: null, isFromMe: false };
 
     // Uazapi v2 format (EventType + message object)
     if (body.EventType && body.message) {
-      if (body.message.fromMe || body.message.wasSentByApi || body.message.isGroup) return empty;
+      if (body.message.isGroup) return empty;
+
+      const isFromMe = !!(body.message.fromMe || body.message.wasSentByApi);
 
       const text = body.message.text || body.message.content || null;
       const msgType = body.message.messageType || body.message.type || null;
@@ -407,11 +452,12 @@ export class WhatsAppWebhookController {
         messageId: body.message.messageid || null,
         remoteJid: body.message.chatid || null,
         mediaType: isMedia ? 'image' : null,
+        isFromMe,
       };
     }
 
     // Legacy flat format
-    if (body.body && body.remoteJid && !body.fromMe) {
+    if (body.body && body.remoteJid) {
       const phone = this.jidToPhone(body.remoteJid);
       return {
         phone,
@@ -420,6 +466,7 @@ export class WhatsAppWebhookController {
         messageId: body.messageId || null,
         remoteJid: body.remoteJid,
         mediaType: null,
+        isFromMe: !!body.fromMe,
       };
     }
 
@@ -432,7 +479,7 @@ export class WhatsAppWebhookController {
     if (!isMessageEvent) return empty;
 
     const data = body.data;
-    if (!data?.key || data.key.fromMe) return empty;
+    if (!data?.key) return empty;
 
     const text = this.extractText(data);
     const hasImage = !!data.message?.imageMessage;
@@ -448,6 +495,7 @@ export class WhatsAppWebhookController {
       messageId: data.key.id || null,
       remoteJid,
       mediaType: hasImage ? 'image' : null,
+      isFromMe: !!data.key.fromMe,
     };
   }
 
@@ -516,6 +564,15 @@ export class WhatsAppWebhookController {
       }
     }
 
+    // Check analyst cooldown – if an analyst intervened recently, wait before responding
+    const cooldownExpiry = this.analystCooldown.get(phone);
+    if (cooldownExpiry && Date.now() < cooldownExpiry) {
+      const remainMs = cooldownExpiry - Date.now();
+      this.logger.log(`Analyst cooldown active for ${phone} (${Math.round(remainMs / 1000)}s remaining). Delaying agent response.`);
+      await this.delay(remainMs);
+    }
+    this.analystCooldown.delete(phone);
+
     this.processingLock.set(phone, Date.now());
     this.rebufferCount.delete(phone);
     const combinedMessage = buffered.texts.join('\n');
@@ -581,6 +638,7 @@ export class WhatsAppWebhookController {
             this.logger.log(`Issue resolved for ${phone}. Sending @zapflow finalization command.`);
 
             const zapflowCmd = `@zapflow finalizar atendimento ${notif.message}`;
+            this.trackAgentSent(phone, zapflowCmd);
             this.uazapi.sendText(phone, zapflowCmd).then((ok) => {
               if (ok) {
                 this.logger.log(`ZapFlow finalization command sent to ${phone}`);
@@ -588,6 +646,11 @@ export class WhatsAppWebhookController {
                 this.logger.error(`Failed to send ZapFlow finalization command to ${phone}`);
               }
             });
+
+            if (this.analystCollaborated.get(phone)) {
+              this.saveReferenceCaseFromSession(phone, buffered.customerName, buffered.systemName, notif.message, notif.customerSummary);
+              this.analystCollaborated.delete(phone);
+            }
 
             const closeMsg =
               `[ATENDIMENTO RESOLVIDO]\n` +
@@ -612,6 +675,37 @@ export class WhatsAppWebhookController {
     } finally {
       this.processingLock.delete(phone);
     }
+  }
+
+  private saveReferenceCaseFromSession(
+    phone: string,
+    customerName: string,
+    systemName: string | undefined,
+    problemSolution: string,
+    customerSummary?: string,
+  ): void {
+    const sessionId = `wa-${phone}`;
+    const history = this.chatService.getConversationHistory(sessionId);
+    if (!history || history.length === 0) {
+      this.logger.warn(`Cannot save reference case for ${phone}: no conversation history`);
+      return;
+    }
+
+    const parts = problemSolution.match(/Resumo do problema:\s*(.+?)\.?\s*Resumo da solução:\s*(.+)/i);
+    const problemSummary = parts?.[1] || customerSummary || '';
+    const solutionSummary = parts?.[2] || problemSolution;
+
+    this.referenceCaseService.saveReferenceCase({
+      phone,
+      customerName,
+      systemName,
+      analystName: 'Cássio',
+      conversation: history,
+      problemSummary,
+      solutionSummary,
+    });
+
+    this.logger.log(`Reference case queued for saving: ${customerName} (${phone})`);
   }
 
   private escalateToManager(customerName: string, customerPhone: string, reason: string): void {
@@ -847,10 +941,28 @@ export class WhatsAppWebhookController {
     }
   }
 
+  private trackAgentSent(phone: string, text: string): void {
+    const snippet = text.slice(0, 80).toLowerCase().trim();
+    const list = this.recentAgentSent.get(phone) || [];
+    list.push(snippet);
+    if (list.length > this.AGENT_SENT_HISTORY_SIZE) list.shift();
+    this.recentAgentSent.set(phone, list);
+  }
+
+  private isAgentEcho(phone: string, text: string): boolean {
+    const snippet = text.slice(0, 80).toLowerCase().trim();
+    const list = this.recentAgentSent.get(phone);
+    if (!list || list.length === 0) return false;
+    return list.some((s) => snippet.startsWith(s) || s.startsWith(snippet));
+  }
+
   private async sendWithRetry(phone: string, text: string, maxRetries: number): Promise<boolean> {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const sent = await this.uazapi.sendText(phone, text);
-      if (sent) return true;
+      if (sent) {
+        this.trackAgentSent(phone, text);
+        return true;
+      }
       if (attempt < maxRetries) {
         this.logger.warn(`sendText to ${phone} failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in 3s...`);
         await this.delay(3000);
