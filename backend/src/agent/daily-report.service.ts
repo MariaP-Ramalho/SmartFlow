@@ -106,10 +106,39 @@ export class DailyReportService {
     return ingested;
   }
 
+  private async resolveAgentTecnicoId(): Promise<number | null> {
+    const explicitId = parseInt(this.configService.get<string>('AGENT_TECNICO_ID') || '0', 10);
+    if (explicitId > 0) return explicitId;
+
+    const agentName = this.configService.get<string>('AGENT_DISPLAY_NAME') || '';
+    if (!agentName) return null;
+
+    try {
+      const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+      const match = tecnicos.find(
+        (t) => t.z90_tec_nome.toLowerCase().trim() === agentName.toLowerCase().trim(),
+      );
+      if (match) {
+        this.logger.log(`Resolved agent tecnico ID: ${match.z90_tec_id} (${match.z90_tec_nome})`);
+        return match.z90_tec_id;
+      }
+      const partial = tecnicos.find(
+        (t) => t.z90_tec_nome.toLowerCase().includes(agentName.split(' ')[0].toLowerCase()),
+      );
+      if (partial) {
+        this.logger.log(`Resolved agent tecnico ID (partial match): ${partial.z90_tec_id} (${partial.z90_tec_nome})`);
+        return partial.z90_tec_id;
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to resolve agent tecnico ID: ${err?.message}`);
+    }
+    return null;
+  }
+
   private async dailyAgentLearning(): Promise<void> {
-    const agentTecnicoId = parseInt(this.configService.get<string>('AGENT_TECNICO_ID') || '0', 10);
+    const agentTecnicoId = await this.resolveAgentTecnicoId();
     if (!agentTecnicoId) {
-      this.logger.warn('AGENT_TECNICO_ID not configured — skipping daily agent learning');
+      this.logger.warn('Could not resolve agent tecnico ID — skipping daily agent learning');
       return;
     }
 

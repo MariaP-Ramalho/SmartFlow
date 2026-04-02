@@ -62,6 +62,22 @@ export class ZapFlowController {
     return { data: result.data, total: result.total, page: pg, limit: lim };
   }
 
+  @Get('relatorio/agente-id')
+  @ApiOperation({ summary: 'Resolve the agent tecnico ID by name' })
+  async resolveAgentId(@Query('name') name?: string) {
+    const agentName = name || 'Renato Solves';
+    const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+    const match = tecnicos.find(
+      (t) => t.z90_tec_nome.toLowerCase().trim() === agentName.toLowerCase().trim(),
+    );
+    if (match) return { tecnicoId: match.z90_tec_id, nome: match.z90_tec_nome };
+    const partial = tecnicos.find(
+      (t) => t.z90_tec_nome.toLowerCase().includes(agentName.split(' ')[0].toLowerCase()),
+    );
+    if (partial) return { tecnicoId: partial.z90_tec_id, nome: partial.z90_tec_nome };
+    return { tecnicoId: null, nome: null, error: 'Técnico não encontrado' };
+  }
+
   @Get('relatorio/agente')
   @ApiOperation({ summary: 'Report: all atendimentos the agent participated in' })
   @ApiQuery({ name: 'tecnicoId', required: true, type: Number })

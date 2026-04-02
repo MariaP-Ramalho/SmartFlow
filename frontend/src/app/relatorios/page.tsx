@@ -127,9 +127,10 @@ export default function RelatoriosPage() {
 
   const loadFilterOptions = useCallback(async () => {
     try {
-      const [sRes, tRes] = await Promise.all([
+      const [sRes, tRes, agentRes] = await Promise.all([
         api.get("/zapflow/sistemas"),
         api.get("/zapflow/tecnicos"),
+        api.get("/zapflow/relatorio/agente-id"),
       ]);
       const rawSistemas: SistemaOpt[] = sRes.data?.data || [];
       const rawTecnicos: TecnicoOpt[] = tRes.data?.data || [];
@@ -138,10 +139,14 @@ export default function RelatoriosPage() {
       setSistemas(rawSistemas);
       setTecnicos(rawTecnicos);
 
-      if (rawTecnicos.length > 0 && !tecnicoId) {
-        const renato = rawTecnicos.find((t) => t.z90_tec_nome.toLowerCase().includes("renato"));
-        if (renato) setTecnicoId(String(renato.z90_tec_id));
-        else setTecnicoId(String(rawTecnicos[0].z90_tec_id));
+      if (!tecnicoId) {
+        const resolvedId = agentRes.data?.tecnicoId;
+        if (resolvedId) {
+          setTecnicoId(String(resolvedId));
+        } else if (rawTecnicos.length > 0) {
+          const renato = rawTecnicos.find((t) => t.z90_tec_nome.toLowerCase().includes("renato"));
+          setTecnicoId(String(renato ? renato.z90_tec_id : rawTecnicos[0].z90_tec_id));
+        }
       }
     } catch {
       setSistemas([]);
