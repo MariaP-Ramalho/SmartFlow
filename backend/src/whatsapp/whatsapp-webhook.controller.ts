@@ -25,7 +25,7 @@ interface UazapiWebhookPayload {
   };
   message?: {
     text?: string;
-    content?: string;
+    content?: any;
     chatid?: string;
     chatlid?: string;
     fromMe?: boolean;
@@ -34,6 +34,7 @@ interface UazapiWebhookPayload {
     sender?: string;
     sender_pn?: string;
     messageType?: string;
+    mediaType?: string;
     messageTimestamp?: number;
     isGroup?: boolean;
     wasSentByApi?: boolean;
@@ -200,10 +201,16 @@ export class WhatsAppWebhookController {
         payload: JSON.parse(JSON.stringify(body)),
         parsed: { phone, name, text: text?.slice(0, 100), messageId, remoteJid, mediaType, isFromMe },
       });
-      if (this.recentPayloads.length > 20) this.recentPayloads.shift();
+      if (this.recentPayloads.length > 50) this.recentPayloads.shift();
+
+      if (mediaType) {
+        this.logger.log(`Media detected from ${phone}: type=${mediaType}, msgType=${body.message?.messageType}, rawMediaType=${body.message?.mediaType}, messageId=${messageId}`);
+      }
 
       if (!phone || (!text && !mediaType)) {
-        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, media=${mediaType}, event=${body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
+        const rawMsgType = body.message?.messageType || body.message?.type || '';
+        const rawMediaType = body.message?.mediaType || '';
+        this.logger.debug(`Ignored webhook: phone=${phone}, text=${text ? 'yes' : 'null'}, media=${mediaType}, msgType=${rawMsgType}, rawMedia=${rawMediaType}, event=${body.EventType || body.event || 'flat'}, keys=${Object.keys(body).join(',')}`);
         return;
       }
 
@@ -406,7 +413,9 @@ export class WhatsAppWebhookController {
     return { ok: allOk, steps };
   }
 
-  private static readonly IMAGE_TYPES = new Set(['image', 'imageMessage']);
+  private static readonly IMAGE_TYPES = new Set([
+    'image', 'imageMessage', 'ImageMessage', 'stickerMessage', 'StickerMessage',
+  ]);
 
   private parsePayload(body: UazapiWebhookPayload): {
     phone: string | null;
@@ -425,9 +434,19 @@ export class WhatsAppWebhookController {
 
       const isFromMe = !!(body.message.fromMe || body.message.wasSentByApi);
 
-      const text = body.message.text || body.message.content || null;
       const msgType = body.message.messageType || body.message.type || null;
-      const isMedia = msgType && WhatsAppWebhookController.IMAGE_TYPES.has(msgType);
+      const rawMediaType = body.message.mediaType || '';
+      const isMedia =
+        (msgType && WhatsAppWebhookController.IMAGE_TYPES.has(msgType)) ||
+        rawMediaType.toLowerCase().startsWith('image');
+
+      // Extract text: for media messages caption may be in content.caption
+      const contentObj = body.message.content;
+      const caption =
+        (typeof contentObj === 'object' && contentObj !== null)
+          ? (contentObj as any).caption || (contentObj as any).text || null
+          : null;
+      const text = body.message.text || caption || (typeof contentObj === 'string' ? contentObj : null) || null;
 
       if (!text && !isMedia) return empty;
 
