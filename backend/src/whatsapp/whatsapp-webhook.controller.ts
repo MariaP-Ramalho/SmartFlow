@@ -72,7 +72,7 @@ export class WhatsAppWebhookController {
     string,
     { texts: string[]; customerName: string; systemName?: string; timer: ReturnType<typeof setTimeout> }
   >();
-  private readonly BUFFER_DELAY_MS = 10000;
+  private readonly BUFFER_DELAY_MS = 15000;
   private readonly PROCESSING_TIMEOUT_MS = 120_000; // 2 min max per chat call
   private readonly processingLock = new Map<string, number>(); // phone → start timestamp
   private readonly recentPayloads: { ts: string; payload: any; parsed: any }[] = [];

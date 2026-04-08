@@ -11,7 +11,7 @@ export class AgentConfig {
   @Prop({ required: true })
   systemPrompt: string;
 
-  @Prop({ default: 10000 })
+  @Prop({ default: 15000 })
   bufferDelayMs: number;
 
   @Prop({ default: 'gpt-5.2' })
