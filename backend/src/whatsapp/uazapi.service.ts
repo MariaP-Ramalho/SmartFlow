@@ -93,25 +93,36 @@ export class UazapiService implements OnModuleInit {
   async downloadMedia(messageId: string): Promise<{ base64: string; mimetype: string } | null> {
     const cfg = this.getAxiosConfig();
     if (!cfg) return null;
-    try {
-      const resp = await axios.post(
-        `${cfg.baseUrl}/chat/downloadMedia`,
-        { messageId },
-        { headers: cfg.headers, timeout: 30000 },
-      );
-      const data = resp.data;
-      const base64 = data?.base64 || data?.data || data?.media || null;
-      const mimetype = data?.mimetype || data?.mimeType || 'image/jpeg';
-      if (!base64) {
-        this.logger.warn(`downloadMedia for ${messageId}: no base64 in response keys=${Object.keys(data || {})}`);
-        return null;
-      }
-      this.logger.log(`Media downloaded for ${messageId}: ${mimetype} (${Math.round(base64.length / 1024)}KB base64)`);
-      return { base64, mimetype };
-    } catch (err: any) {
-      this.logger.error(`Failed to download media ${messageId}: status=${err?.response?.status} msg=${err?.message}`);
-      return null;
+
+    const idsToTry = [messageId];
+    // Uazapi may need just the short ID (after ':') or the full owner:id format
+    if (messageId.includes(':')) {
+      idsToTry.push(messageId.split(':').pop()!);
     }
+
+    for (const id of idsToTry) {
+      try {
+        this.logger.log(`Attempting downloadMedia with id=${id}`);
+        const resp = await axios.post(
+          `${cfg.baseUrl}/chat/downloadMedia`,
+          { messageId: id },
+          { headers: cfg.headers, timeout: 30000 },
+        );
+        const data = resp.data;
+        const base64 = data?.base64 || data?.data || data?.media || null;
+        const mimetype = data?.mimetype || data?.mimeType || 'image/jpeg';
+        if (!base64) {
+          this.logger.warn(`downloadMedia id=${id}: no base64, keys=${Object.keys(data || {})}`);
+          continue;
+        }
+        this.logger.log(`Media downloaded id=${id}: ${mimetype} (${Math.round(base64.length / 1024)}KB base64)`);
+        return { base64, mimetype };
+      } catch (err: any) {
+        this.logger.warn(`downloadMedia id=${id} failed: status=${err?.response?.status} msg=${err?.message}`);
+      }
+    }
+    this.logger.error(`All downloadMedia attempts failed for ${messageId}`);
+    return null;
   }
 
   async testConnection(): Promise<{ ok: boolean; status?: number; error?: string }> {

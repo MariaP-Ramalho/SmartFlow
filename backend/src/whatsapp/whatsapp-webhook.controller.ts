@@ -468,7 +468,7 @@ export class WhatsAppWebhookController {
         phone,
         name,
         text,
-        messageId: body.message.messageid || null,
+        messageId: body.message.id || body.message.messageid || null,
         remoteJid: body.message.chatid || null,
         mediaType: isMedia ? 'image' : null,
         isFromMe,
