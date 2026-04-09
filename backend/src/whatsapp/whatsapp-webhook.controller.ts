@@ -699,10 +699,9 @@ export class WhatsAppWebhookController {
         }
       }
 
-      // --- Process transfer commands ---
+      // --- Process transfer commands (comando direto no atendimento) ---
       if (response.transferCommands?.length > 0) {
         for (const cmd of response.transferCommands) {
-          // "Comando direto no atendimento" — sent within the conversation, ZapFlow infers the atendimento
           const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${cmd.reason}`;
           this.logger.log(`Sending transfer command: ${zapflowCmd.slice(0, 150)}`);
           this.trackAgentSent(phone, zapflowCmd);
@@ -711,25 +710,10 @@ export class WhatsAppWebhookController {
               this.logger.log(`Transfer command sent for atendimento ${cmd.atendimentoId} → ${cmd.targetTecnicoName}`);
             } else {
               this.logger.error(`Failed to send transfer command for atendimento ${cmd.atendimentoId}`);
-              // Fallback: try the explicit format with id_do_atendimento
-              if (cmd.atendimentoId) {
-                const fallbackCmd = `@zapflow transferir id_do_atendimento=${cmd.atendimentoId}, idnovocolaborador=${cmd.targetTecnicoId}, motivo=${cmd.reason}`;
-                this.logger.log(`Retrying with explicit atendimento ID: ${fallbackCmd.slice(0, 150)}`);
-                this.trackAgentSent(phone, fallbackCmd);
-                this.uazapi.sendText(phone, fallbackCmd).then((ok2) => {
-                  if (!ok2) {
-                    this.sendPrimaryManagerOnly(
-                      `[FALHA TRANSFERÊNCIA]\nComando @zapflow transferir falhou para atendimento #${cmd.atendimentoId}.\n` +
-                      `Destino: ${cmd.targetTecnicoName} (ID ${cmd.targetTecnicoId})\nMotivo: ${cmd.reason.slice(0, 200)}`,
-                    );
-                  }
-                });
-              } else {
-                this.sendPrimaryManagerOnly(
-                  `[FALHA TRANSFERÊNCIA]\nComando @zapflow transferir falhou.\n` +
-                  `Destino: ${cmd.targetTecnicoName} (ID ${cmd.targetTecnicoId})\nMotivo: ${cmd.reason.slice(0, 200)}`,
-                );
-              }
+              this.sendPrimaryManagerOnly(
+                `[FALHA TRANSFERÊNCIA]\nComando @zapflow transferir falhou para atendimento #${cmd.atendimentoId}.\n` +
+                `Destino: ${cmd.targetTecnicoName} (ID ${cmd.targetTecnicoId})\nMotivo: ${cmd.reason.slice(0, 200)}`,
+              );
             }
           });
         }
