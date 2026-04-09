@@ -254,13 +254,8 @@ export class WhatsAppWebhookController {
           effectiveText = imageDesc;
           this.logger.log(`Image processed for ${phone}: "${imageDesc.slice(0, 80)}"`);
         } else if (!text) {
-          this.logger.warn(`Image from ${phone} could not be analyzed and has no caption. Asking client to describe.`);
-          const fallback = 'Recebi sua imagem, mas não consegui visualizar. Pode descrever o que aparece na tela?';
-          const sent = await this.sendWithRetry(phone, fallback, 2);
-          if (sent) {
-            this.broadcastMirrorMessage(`*${this.agentName}*: ${fallback}`);
-          }
-          return;
+          this.logger.log(`Image from ${phone} could not be analyzed. Buffering with marker and waiting for ZapFlow transcription.`);
+          effectiveText = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
         }
       }
 
@@ -608,7 +603,28 @@ export class WhatsAppWebhookController {
 
     this.processingLock.set(phone, Date.now());
     this.rebufferCount.delete(phone);
-    const combinedMessage = buffered.texts.join('\n');
+
+    const IMAGE_MARKER = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
+    const hasImageMarker = buffered.texts.some(t => t === IMAGE_MARKER);
+    const realTexts = buffered.texts.filter(t => t !== IMAGE_MARKER);
+
+    if (hasImageMarker && realTexts.length === 0) {
+      this.logger.warn(`Image from ${phone} had no transcription after buffer wait. Asking client to describe.`);
+      this.processingLock.delete(phone);
+      const fallback = 'Recebi sua imagem, mas não consegui visualizá-la. Pode me descrever o que aparece na tela?';
+      const sent = await this.sendWithRetry(phone, fallback, 2);
+      if (sent) {
+        this.trackAgentSent(phone, fallback);
+        this.broadcastMirrorMessage(`*${this.agentName}*: ${fallback}`);
+      }
+      return;
+    }
+
+    if (hasImageMarker && realTexts.length > 0) {
+      this.logger.log(`Image transcription arrived during buffer for ${phone}. Using transcription text.`);
+    }
+
+    const combinedMessage = realTexts.length > 0 ? realTexts.join('\n') : buffered.texts.join('\n');
 
     this.logger.log(
       `Processing ${buffered.texts.length} buffered msg(s) from ${buffered.customerName} (${phone}): ${combinedMessage.slice(0, 100)}`,
@@ -644,6 +660,13 @@ export class WhatsAppWebhookController {
       }
 
       const cleanReply = this.sanitizeForWhatsApp(response.reply);
+
+      // Simulate human-like typing delay based on response length
+      const typingDelayMs = Math.min(5000, Math.max(2000, cleanReply.length * 15));
+      this.uazapi.sendTyping(phone, typingDelayMs + 1000);
+      this.logger.log(`Adding typing delay of ${typingDelayMs}ms for ${phone} (reply length: ${cleanReply.length})`);
+      await this.delay(typingDelayMs);
+
       const sent = await this.sendWithRetry(phone, cleanReply, 3);
       this.logger.log(`sendText to ${phone}: ${sent ? 'ok' : 'FAILED after retries'}`);
 
