@@ -24,6 +24,8 @@ export interface ChatInput {
   sessionId?: string;
   systemName: string;
   customerName: string;
+  atendimentoId?: number;
+  agentTecnicoId?: number;
 }
 
 export interface ManagerNotification {
@@ -37,6 +39,15 @@ export interface AgentMessageSourcesMeta {
   toolsUsed: string[];
   knowledge: { id: string; title: string; source?: string }[];
   pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
+}
+
+export interface TransferCommand {
+  atendimentoId: number;
+  targetTecnicoId: number;
+  targetTecnicoName: string;
+  isCoordinator: boolean;
+  reason: string;
+  timestamp: string;
 }
 
 export interface ChatResponse {
@@ -53,6 +64,7 @@ export interface ChatResponse {
   totalDurationMs: number;
   conversationLength: number;
   managerNotifications: ManagerNotification[];
+  transferCommands: TransferCommand[];
 }
 
 interface ChatSession {
@@ -171,6 +183,8 @@ export class ChatService {
         systemName: session.systemName,
         customerName: session.customerName,
         isTestChat: !isWhatsApp,
+        ...(input.atendimentoId ? { atendimentoId: input.atendimentoId } : {}),
+        ...(input.agentTecnicoId ? { agentTecnicoId: input.agentTecnicoId } : {}),
       },
     };
 
@@ -214,6 +228,8 @@ export class ChatService {
 
     const managerNotifications: ManagerNotification[] =
       context.metadata?.managerNotifications || [];
+    const transferCommands: TransferCommand[] =
+      context.metadata?.transferCommands || [];
 
     return {
       sessionId: session.id,
@@ -227,6 +243,7 @@ export class ChatService {
       totalDurationMs: Date.now() - startTime,
       conversationLength: session.conversationHistory.length,
       managerNotifications,
+      transferCommands,
     };
   }
 

@@ -89,6 +89,8 @@ export class WhatsAppWebhookController {
   private readonly ANALYST_COOLDOWN_MS = 30_000;
   /** Tracks if an analyst collaborated during the current atendimento. */
   private readonly analystCollaborated = new Map<string, boolean>();
+  /** Tracks the active atendimento ID for each phone/channel. */
+  private readonly activeAtendimentoByPhone = new Map<string, number>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -109,6 +111,8 @@ export class WhatsAppWebhookController {
   private static readonly ZAPFLOW_CLIENT_MSG_REGEX = /^\*(.+?)\s+diz:\*\s*\n+([\s\S]+)$/;
 
   private readonly openai: OpenAI | null;
+  /** Cached agent tecnico ID from ZapFlow (resolved once on first use). */
+  private resolvedAgentTecnicoId: number | undefined;
 
   constructor(
     private readonly uazapi: UazapiService,
@@ -120,6 +124,8 @@ export class WhatsAppWebhookController {
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY') || this.configService.get<string>('llm.openai.apiKey');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
+    const tecId = this.configService.get<string>('AGENT_TECNICO_ID');
+    if (tecId) this.resolvedAgentTecnicoId = parseInt(tecId, 10) || undefined;
   }
 
   private get managerPhone(): string {
@@ -147,6 +153,7 @@ export class WhatsAppWebhookController {
         [...this.analystCooldown.entries()].map(([p, t]) => [p, Math.max(0, Math.round((t - now) / 1000))]),
       ),
       analystCollaborations: Object.fromEntries(this.analystCollaborated),
+      activeAtendimentos: Object.fromEntries(this.activeAtendimentoByPhone),
       timestamp: new Date().toISOString(),
     };
   }
@@ -171,6 +178,7 @@ export class WhatsAppWebhookController {
       this.recentAgentSent.clear();
       this.analystCooldown.clear();
       this.analystCollaborated.clear();
+      this.activeAtendimentoByPhone.clear();
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
@@ -181,6 +189,7 @@ export class WhatsAppWebhookController {
     this.recentAgentSent.delete(phone);
     this.analystCooldown.delete(phone);
     this.analystCollaborated.delete(phone);
+    this.activeAtendimentoByPhone.delete(phone);
     this.chatService.clearSession(`wa-${phone}`);
     this.logger.log(`Channel ${phone} reset`);
     return { reset: phone };
@@ -245,13 +254,8 @@ export class WhatsAppWebhookController {
           effectiveText = imageDesc;
           this.logger.log(`Image processed for ${phone}: "${imageDesc.slice(0, 80)}"`);
         } else if (!text) {
-          this.logger.warn(`Image from ${phone} could not be analyzed and has no caption. Asking client to describe.`);
-          const fallback = 'Recebi sua imagem, mas não consegui visualizar. Pode descrever o que aparece na tela?';
-          const sent = await this.sendWithRetry(phone, fallback, 2);
-          if (sent) {
-            this.broadcastMirrorMessage(`*${this.agentName}*: ${fallback}`);
-          }
-          return;
+          this.logger.log(`Image from ${phone} could not be analyzed. Buffering with marker and waiting for ZapFlow transcription.`);
+          effectiveText = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
         }
       }
 
@@ -272,6 +276,7 @@ export class WhatsAppWebhookController {
         this.recentAgentSent.delete(phone);
         this.analystCooldown.delete(phone);
         this.analystCollaborated.delete(phone);
+        this.activeAtendimentoByPhone.delete(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -284,7 +289,11 @@ export class WhatsAppWebhookController {
           `O cliente está aguardando. Cumprimente e pergunte como pode ajudar.`;
 
         this.activeClientByPhone.set(phone, clientName);
-        this.logger.log(`Starting atendimento: ${clientName} (${systemName}) on ${phone}`);
+        const ateId = parseInt(atd?.numero || '0', 10);
+        if (ateId > 0) {
+          this.activeAtendimentoByPhone.set(phone, ateId);
+        }
+        this.logger.log(`Starting atendimento #${ateId}: ${clientName} (${systemName}) on ${phone}`);
         this.bufferMessage(phone, clientName, greeting, systemName);
         return;
       }
@@ -594,7 +603,28 @@ export class WhatsAppWebhookController {
 
     this.processingLock.set(phone, Date.now());
     this.rebufferCount.delete(phone);
-    const combinedMessage = buffered.texts.join('\n');
+
+    const IMAGE_MARKER = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
+    const hasImageMarker = buffered.texts.some(t => t === IMAGE_MARKER);
+    const realTexts = buffered.texts.filter(t => t !== IMAGE_MARKER);
+
+    if (hasImageMarker && realTexts.length === 0) {
+      this.logger.warn(`Image from ${phone} had no transcription after buffer wait. Asking client to describe.`);
+      this.processingLock.delete(phone);
+      const fallback = 'Recebi sua imagem, mas não consegui visualizá-la. Pode me descrever o que aparece na tela?';
+      const sent = await this.sendWithRetry(phone, fallback, 2);
+      if (sent) {
+        this.trackAgentSent(phone, fallback);
+        this.broadcastMirrorMessage(`*${this.agentName}*: ${fallback}`);
+      }
+      return;
+    }
+
+    if (hasImageMarker && realTexts.length > 0) {
+      this.logger.log(`Image transcription arrived during buffer for ${phone}. Using transcription text.`);
+    }
+
+    const combinedMessage = realTexts.length > 0 ? realTexts.join('\n') : buffered.texts.join('\n');
 
     this.logger.log(
       `Processing ${buffered.texts.length} buffered msg(s) from ${buffered.customerName} (${phone}): ${combinedMessage.slice(0, 100)}`,
@@ -613,6 +643,8 @@ export class WhatsAppWebhookController {
         sessionId: `wa-${phone}`,
         systemName: buffered.systemName || 'WhatsApp',
         customerName: buffered.customerName,
+        atendimentoId: this.activeAtendimentoByPhone.get(phone),
+        agentTecnicoId: this.resolvedAgentTecnicoId,
       });
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`Chat processing timed out after ${this.PROCESSING_TIMEOUT_MS}ms`)), this.PROCESSING_TIMEOUT_MS),
@@ -628,6 +660,13 @@ export class WhatsAppWebhookController {
       }
 
       const cleanReply = this.sanitizeForWhatsApp(response.reply);
+
+      // Simulate human-like typing delay based on response length
+      const typingDelayMs = Math.min(5000, Math.max(2000, cleanReply.length * 15));
+      this.uazapi.sendTyping(phone, typingDelayMs + 1000);
+      this.logger.log(`Adding typing delay of ${typingDelayMs}ms for ${phone} (reply length: ${cleanReply.length})`);
+      await this.delay(typingDelayMs);
+
       const sent = await this.sendWithRetry(phone, cleanReply, 3);
       this.logger.log(`sendText to ${phone}: ${sent ? 'ok' : 'FAILED after retries'}`);
 
@@ -683,8 +722,28 @@ export class WhatsAppWebhookController {
         }
       }
 
+      // --- Process transfer commands (comando direto no atendimento) ---
+      if (response.transferCommands?.length > 0) {
+        for (const cmd of response.transferCommands) {
+          const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${cmd.reason}`;
+          this.logger.log(`Sending transfer command: ${zapflowCmd.slice(0, 150)}`);
+          this.trackAgentSent(phone, zapflowCmd);
+          this.uazapi.sendText(phone, zapflowCmd).then((ok) => {
+            if (ok) {
+              this.logger.log(`Transfer command sent for atendimento ${cmd.atendimentoId} → ${cmd.targetTecnicoName}`);
+            } else {
+              this.logger.error(`Failed to send transfer command for atendimento ${cmd.atendimentoId}`);
+              this.sendPrimaryManagerOnly(
+                `[FALHA TRANSFERÊNCIA]\nComando @zapflow transferir falhou para atendimento #${cmd.atendimentoId}.\n` +
+                `Destino: ${cmd.targetTecnicoName} (ID ${cmd.targetTecnicoId})\nMotivo: ${cmd.reason.slice(0, 200)}`,
+              );
+            }
+          });
+        }
+      }
+
       this.logger.log(
-        `Reply sent to ${phone}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Duration: ${response.totalDurationMs}ms`,
+        `Reply sent to ${phone}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Notifications: ${response.managerNotifications?.length || 0}. Transfers: ${response.transferCommands?.length || 0}. Duration: ${response.totalDurationMs}ms`,
       );
     } catch (err) {
       this.logger.error(

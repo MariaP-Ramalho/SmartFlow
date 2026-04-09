@@ -210,19 +210,34 @@ export default function RelatoriosPage() {
     }
   };
 
-  const exportCSV = () => {
+  const exportCSV = async () => {
     if (!tecnicoId) return;
-    const params = new URLSearchParams();
-    params.set("tecnicoId", tecnicoId);
-    if (dataInicio) params.set("dataInicio", dataInicio);
-    if (dataFim) params.set("dataFim", dataFim);
-    if (sistemaId) params.set("sistemaId", sistemaId);
-    if (statusId) params.set("statusId", statusId);
-    if (apenasTransferidos) params.set("transferidos", "true");
-    if (buscaDebounced) params.set("search", buscaDebounced);
+    try {
+      const params: Record<string, string> = { tecnicoId };
+      if (dataInicio) params.dataInicio = dataInicio;
+      if (dataFim) params.dataFim = dataFim;
+      if (sistemaId) params.sistemaId = sistemaId;
+      if (statusId) params.statusId = statusId;
+      if (apenasTransferidos) params.transferidos = "true";
+      if (buscaDebounced) params.search = buscaDebounced;
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3003";
-    window.open(`${baseUrl}/zapflow/relatorio/agente/export?${params.toString()}`, "_blank");
+      const response = await api.get("/zapflow/relatorio/agente/export", {
+        params,
+        responseType: "blob",
+      });
+
+      const blob = new Blob([response.data], { type: "text/csv;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `relatorio-agente-${dataInicio || "inicio"}-${dataFim || "fim"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert("Erro ao exportar relatório. Tente novamente.");
+    }
   };
 
   const clearFilters = () => {

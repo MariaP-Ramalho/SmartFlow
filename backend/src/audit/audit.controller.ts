@@ -29,6 +29,37 @@ export class AuditController {
     return this.auditService.getTimeline(caseId);
   }
 
+  @Get('learning')
+  @ApiOperation({ summary: 'Get daily learning history' })
+  @ApiQuery({ name: 'days', required: false, type: Number })
+  async getLearningHistory(@Query('days') days?: string) {
+    const limit = days ? Math.min(90, Math.max(1, parseInt(days, 10))) : 30;
+    const result = await this.auditService.findAll({
+      action: 'daily_agent_learning',
+      limit,
+      page: 1,
+    });
+    const reportLogs = await this.auditService.findAll({
+      action: 'daily_report_zapflow',
+      limit,
+      page: 1,
+    });
+    return {
+      learningLogs: result.data.map((log: any) => ({
+        date: log.details?.date || log.createdAt,
+        totalCases: log.details?.totalCases || 0,
+        transferredLearned: log.details?.transferredLearned || 0,
+        resolvedLearned: log.details?.resolvedLearned || 0,
+        createdAt: log.createdAt,
+      })),
+      reportLogs: reportLogs.data.map((log: any) => ({
+        date: log.details?.date || log.createdAt,
+        ingestedCount: log.details?.ingestedCount || 0,
+        createdAt: log.createdAt,
+      })),
+    };
+  }
+
   @Get()
   @ApiOperation({ summary: 'List audit logs with filters' })
   @ApiQuery({ name: 'page', required: false, type: Number })

@@ -50,6 +50,20 @@ export class ReferenceCaseService {
     }
   }
 
+  async findRecent(limit = 10): Promise<{ total: number; data: any[] }> {
+    const [data, total] = await Promise.all([
+      this.refCaseModel
+        .find()
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .select('phone customerName systemName analystName problemSummary solutionSummary createdAt')
+        .lean()
+        .exec(),
+      this.refCaseModel.countDocuments().exec(),
+    ]);
+    return { total, data };
+  }
+
   async searchReferenceCases(query: string, limit = 5): Promise<any[]> {
     try {
       const results = await this.refCaseModel
