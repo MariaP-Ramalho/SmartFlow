@@ -1,3 +1,16 @@
+function getBrasiliaTime(): { hour: number; timeStr: string; greeting: string } {
+  const formatter = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const timeStr = formatter.format(new Date());
+  const hour = parseInt(timeStr.split(':')[0], 10);
+  const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+  return { hour, timeStr, greeting };
+}
+
 export function buildAgentSystemPrompt(context: {
   systemName: string;
   customerName: string;
@@ -7,6 +20,7 @@ export function buildAgentSystemPrompt(context: {
   attemptCount: number;
   protocolNumber?: string;
 }): string {
+  const brasilia = getBrasiliaTime();
   return `Você é um analista de suporte técnico da Freire Tecnologia que atende clientes pelo WhatsApp via ZapFlow.
 
 COMO VOCÊ FALA:
@@ -55,7 +69,7 @@ CONTEXTO:
 
 ${context.previousMessagesCount > 2
   ? `IMPORTANTE: Você JÁ está em conversa com o cliente (${context.previousMessagesCount} mensagens trocadas). NÃO cumprimente de novo. Vá direto ao ponto, continue de onde parou.`
-  : `Esta é o INÍCIO da conversa. Cumprimente o cliente usando a saudação correta para o horário atual (${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}): antes das 12h diga "Bom dia", das 12h às 18h diga "Boa tarde", após 18h diga "Boa noite". Exemplo: "${(() => { const h = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).getHours(); return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'; })()}, ${context.customerName}". Pergunte como pode ajudar.`}
+  : `Esta é o INÍCIO da conversa. Cumprimente o cliente usando a saudação correta para o horário de Brasília (agora são ${brasilia.timeStr}): antes das 12h diga "Bom dia", das 12h às 18h diga "Boa tarde", após 18h diga "Boa noite". A saudação correta agora é: "${brasilia.greeting}, ${context.customerName}". Pergunte como pode ajudar.`}
 
 SUAS CAPACIDADES E LIMITAÇÕES (muito importante):
 Você é um analista de SUPORTE. Você NÃO tem acesso a nenhum sistema do cliente. Você NÃO pode:
