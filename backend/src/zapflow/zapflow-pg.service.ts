@@ -864,4 +864,73 @@ export class ZapFlowPgService implements OnModuleInit {
       fmt(new Date(year, 11, 25)),   // Natal
     ];
   }
+
+  async getAgentWeeklyStats(tecnicoId: number, days = 7): Promise<any[]> {
+    if (!this.mcp) return [];
+    const results: any[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const stats = await this.getAgentDailyStats(tecnicoId, dateStr);
+      results.push(stats);
+    }
+    return results;
+  }
+
+  async getAgentPerformanceSummary(tecnicoId: number): Promise<Record<string, any>> {
+    if (!this.mcp) return {};
+
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    const monthAgoStr = monthAgo.toISOString().split('T')[0];
+
+    const baseSub = `(
+      SELECT DISTINCT z90_ate_id FROM z90_interacoes_atendimento
+      WHERE z90_int_id_remetente_usuario IN (
+        SELECT z90_tec_id FROM z90_tecnicos_suporte WHERE z90_tec_id = ${this.esc(tecnicoId)}
+      ) OR z90_int_id_remetente_agente_ia IS NOT NULL
+      UNION
+      SELECT z90_ate_id FROM z90_atendimentos
+      WHERE z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}
+         OR z90_ate_id_agente_ia_inicial IS NOT NULL
+    )`;
+
+    const [weekTotal, weekResolved, weekTransferred, monthTotal, monthResolved, openNow, avgTimeRes] = await Promise.all([
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)}`, 'perfWeekTotal'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}`, 'perfWeekResolved'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)} AND a.z90_ate_id_tecnico_responsavel != ${this.esc(tecnicoId)}`, 'perfWeekTransferred'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(monthAgoStr)}`, 'perfMonthTotal'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(monthAgoStr)} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}`, 'perfMonthResolved'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_id_status_atendimento IN (1, 2)`, 'perfOpen'),
+      this.safeQuery(`SELECT AVG(EXTRACT(EPOCH FROM (a.z90_ate_data_fechamento - a.z90_ate_data_abertura))/60) AS avg_min FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)}`, 'perfAvgTime'),
+    ]);
+
+    const wt = parseInt(weekTotal.rows[0]?.cnt || '0', 10);
+    const wr = parseInt(weekResolved.rows[0]?.cnt || '0', 10);
+    const wtr = parseInt(weekTransferred.rows[0]?.cnt || '0', 10);
+    const mt = parseInt(monthTotal.rows[0]?.cnt || '0', 10);
+    const mr = parseInt(monthResolved.rows[0]?.cnt || '0', 10);
+
+    return {
+      week: {
+        total: wt,
+        resolved: wr,
+        transferred: wtr,
+        resolutionRate: wt > 0 ? Math.round((wr / wt) * 100) : 0,
+      },
+      month: {
+        total: mt,
+        resolved: mr,
+        resolutionRate: mt > 0 ? Math.round((mr / mt) * 100) : 0,
+      },
+      openNow: parseInt(openNow.rows[0]?.cnt || '0', 10),
+      avgResolutionMinutes: Math.round(parseFloat(avgTimeRes.rows[0]?.avg_min || '0')),
+    };
+  }
 }

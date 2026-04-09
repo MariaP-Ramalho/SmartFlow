@@ -196,6 +196,30 @@ export class ZapFlowController {
     }
   }
 
+  @Get('dashboard/agente')
+  @ApiOperation({ summary: 'Agent-focused dashboard data' })
+  async getAgentDashboard(
+    @Query('tecnicoId') tecnicoId?: string,
+  ) {
+    const agentName = 'Renato Solves';
+    let tid = tecnicoId ? parseInt(tecnicoId, 10) : 0;
+    if (!tid) {
+      const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+      const match = tecnicos.find(t => t.z90_tec_nome.toLowerCase().includes('renato'));
+      tid = match?.z90_tec_id || 0;
+    }
+    if (!tid) return { error: 'Agente não encontrado' };
+
+    const today = new Date().toISOString().split('T')[0];
+    const [todayStats, weeklyStats, performance] = await Promise.all([
+      this.zapflow.getAgentDailyStats(tid, today),
+      this.zapflow.getAgentWeeklyStats(tid, 7),
+      this.zapflow.getAgentPerformanceSummary(tid),
+    ]);
+
+    return { tecnicoId: tid, todayStats, weeklyStats, performance };
+  }
+
   @Get('atendimentos/:id')
   @ApiOperation({ summary: 'Get a single atendimento with interacoes' })
   async getAtendimento(@Param('id') id: string) {
