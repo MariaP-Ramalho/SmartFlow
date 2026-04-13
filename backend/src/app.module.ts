@@ -12,6 +12,7 @@ import { LlmModule } from './agent/llm/llm.module';
 import { AgentModule } from './agent/agent.module';
 import { ZapFlowPgModule } from './zapflow/zapflow-pg.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { VapiModule } from './vapi/vapi.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthModule } from './health/health.module';
 
@@ -43,6 +44,7 @@ import { HealthModule } from './health/health.module';
     LlmModule,
     AgentModule,
     WhatsAppModule,
+    VapiModule,
   ],
 })
 export class AppModule {}

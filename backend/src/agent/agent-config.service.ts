@@ -92,20 +92,9 @@ export class AgentConfigService implements OnModuleInit {
     previousMessagesCount: number;
     attemptCount: number;
   }): string {
-    if (!this.cachedConfig) {
-      return buildAgentSystemPrompt(context);
-    }
+    let prompt = buildAgentSystemPrompt(context);
 
-    let prompt = this.cachedConfig.systemPrompt;
-
-    prompt = prompt.replace(/\{\{systemName\}\}/g, context.systemName);
-    prompt = prompt.replace(/\{\{customerName\}\}/g, context.customerName);
-    prompt = prompt.replace(/\{\{customerPhone\}\}/g, context.customerPhone);
-    prompt = prompt.replace(/\{\{entityName\}\}/g, context.entityName);
-    prompt = prompt.replace(/\{\{previousMessagesCount\}\}/g, String(context.previousMessagesCount));
-    prompt = prompt.replace(/\{\{attemptCount\}\}/g, String(context.attemptCount));
-
-    if (this.cachedConfig.customInstructions?.trim()) {
+    if (this.cachedConfig?.customInstructions?.trim()) {
       prompt += `\n\nINSTRUÇÕES ADICIONAIS DO ADMINISTRADOR:\n${this.cachedConfig.customInstructions}`;
     }
 

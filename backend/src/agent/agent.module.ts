@@ -55,7 +55,7 @@ import { DailyReportService } from './daily-report.service';
     DailyReportService,
     ReferenceCaseService,
   ],
-  exports: [AgentService, ConversationService, ChatService, AgentConfigService, ReferenceCaseService],
+  exports: [AgentService, ConversationService, ChatService, AgentConfigService, ReferenceCaseService, ToolRegistry],
 })
 export class AgentModule implements OnModuleInit {
   constructor(
