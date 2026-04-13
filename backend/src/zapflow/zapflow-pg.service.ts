@@ -751,21 +751,33 @@ export class ZapFlowPgService implements OnModuleInit {
       return { canTransfer: false, reason: 'Fora do horário de expediente (08:00-18:00, seg-sex). Não é possível transferir.' };
     }
 
+    // Build exclusion set: always exclude the current attendant to avoid "idnovocolaborador = id_do_colaborador" error
+    const excludeIds = new Set<number>();
+    if (excludeTecnicoId) excludeIds.add(excludeTecnicoId);
+
+    if (atendimentoId > 0) {
+      try {
+        const atendimento = await this.getAtendimento(atendimentoId);
+        const currentTecId = atendimento?.z90_ate_id_tecnico_responsavel;
+        if (currentTecId) {
+          excludeIds.add(Number(currentTecId));
+          this.logger.log(`Excluding current attendant (ID ${currentTecId}) from transfer candidates`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not look up current attendant for atendimento ${atendimentoId}: ${err?.message}`);
+      }
+    }
+
+    const shouldExclude = (tecId: number) => excludeIds.has(tecId);
+
     // Step 3: Get technicians for the system
     let tecnicos = await this.getTecnicosBySystem(atendimentoId);
-
-    // Exclude the current agent (Renato) from the list
-    if (excludeTecnicoId) {
-      tecnicos = tecnicos.filter((t) => t.z90_tec_id !== excludeTecnicoId);
-    }
+    tecnicos = tecnicos.filter((t) => !shouldExclude(t.z90_tec_id));
 
     if (tecnicos.length === 0) {
       this.logger.warn(`No technicians found for atendimento ${atendimentoId}'s system`);
-      // Try all available technicians as broader fallback
       tecnicos = await this.getTecnicosDisponiveis();
-      if (excludeTecnicoId) {
-        tecnicos = tecnicos.filter((t) => t.z90_tec_id !== excludeTecnicoId);
-      }
+      tecnicos = tecnicos.filter((t) => !shouldExclude(t.z90_tec_id));
     }
 
     // Step 4: Filter by availability (active + online)
@@ -778,7 +790,7 @@ export class ZapFlowPgService implements OnModuleInit {
     if (disponiveis.length === 0) {
       this.logger.log(`No available technicians. Falling back to coordinator.`);
       const coord = await this.getSystemCoordinator(atendimentoId);
-      if (coord && coord.z90_tec_id !== excludeTecnicoId) {
+      if (coord && !shouldExclude(coord.z90_tec_id)) {
         return {
           canTransfer: true,
           selectedTecnicoId: coord.z90_tec_id,

@@ -725,7 +725,8 @@ export class WhatsAppWebhookController {
       // --- Process transfer commands (comando direto no atendimento) ---
       if (response.transferCommands?.length > 0) {
         for (const cmd of response.transferCommands) {
-          const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${cmd.reason}`;
+          const sanitizedReason = (cmd.reason || '').replace(/[\n\r]+/g, ' ').replace(/,/g, ' ').trim().slice(0, 200);
+          const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${sanitizedReason}`;
           this.logger.log(`Sending transfer command: ${zapflowCmd.slice(0, 150)}`);
           this.trackAgentSent(phone, zapflowCmd);
           this.uazapi.sendText(phone, zapflowCmd).then((ok) => {

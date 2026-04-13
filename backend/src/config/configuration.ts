@@ -17,6 +17,15 @@ export default () => ({
     listId: process.env.CLICKUP_LIST_ID,
   },
 
+  vapi: {
+    apiKey: process.env.VAPI_API_KEY,
+    webhookSecret: process.env.VAPI_WEBHOOK_SECRET,
+    phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
+    serverUrl: process.env.VAPI_SERVER_URL,
+    voiceProvider: process.env.VAPI_VOICE_PROVIDER || 'playht',
+    voiceId: process.env.VAPI_VOICE_ID,
+  },
+
   llm: {
     defaultProvider: process.env.DEFAULT_LLM_PROVIDER || 'openai',
     embeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
