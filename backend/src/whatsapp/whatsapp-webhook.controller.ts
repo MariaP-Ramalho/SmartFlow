@@ -661,16 +661,28 @@ export class WhatsAppWebhookController {
 
       const cleanReply = this.sanitizeForWhatsApp(response.reply);
 
-      // Simulate human-like typing delay based on response length
-      const typingDelayMs = Math.min(5000, Math.max(2000, cleanReply.length * 15));
-      this.uazapi.sendTyping(phone, typingDelayMs + 1000);
-      this.logger.log(`Adding typing delay of ${typingDelayMs}ms for ${phone} (reply length: ${cleanReply.length})`);
-      await this.delay(typingDelayMs);
+      const chunks = this.splitIntoChunks(cleanReply);
+      this.logger.log(`Reply split into ${chunks.length} chunk(s) for ${phone} (total length: ${cleanReply.length})`);
 
-      const sent = await this.sendWithRetry(phone, cleanReply, 3);
-      this.logger.log(`sendText to ${phone}: ${sent ? 'ok' : 'FAILED after retries'}`);
+      let allSent = true;
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunk = chunks[idx];
+        const typingDelayMs = Math.min(10000, Math.max(4000, chunk.length * 30));
+        this.uazapi.sendTyping(phone, typingDelayMs + 2000);
+        this.logger.log(`Chunk ${idx + 1}/${chunks.length}: typing delay ${typingDelayMs}ms (${chunk.length} chars)`);
+        await this.delay(typingDelayMs);
 
-      if (!sent) {
+        const sent = await this.sendWithRetry(phone, chunk, 3);
+        if (!sent) {
+          allSent = false;
+          this.logger.error(`Failed to deliver chunk ${idx + 1} to ${phone} after retries.`);
+          break;
+        }
+      }
+
+      this.logger.log(`sendText to ${phone}: ${allSent ? 'ok' : 'FAILED after retries'}`);
+
+      if (!allSent) {
         this.logger.error(`Failed to deliver reply to ${phone} after retries. Notifying manager.`);
         this.sendPrimaryManagerOnly(
           `[FALHA ENVIO]\nO agente gerou resposta para *${buffered.customerName}* (${phone}) mas não conseguiu entregar via WhatsApp.\nResposta gerada: ${response.reply.slice(0, 300)}`,
@@ -680,7 +692,7 @@ export class WhatsAppWebhookController {
       }
 
       const displayName = this.agentName;
-      if (sent) {
+      if (allSent) {
         this.broadcastMirrorMessage(`*${displayName}*: ${cleanReply}`);
       }
 
@@ -1048,6 +1060,12 @@ export class WhatsAppWebhookController {
       }
     }
     return false;
+  }
+
+  private splitIntoChunks(text: string): string[] {
+    const parts = text.split(/\n\n+/).map((p) => p.trim()).filter((p) => p.length > 0);
+    if (parts.length <= 1) return [text.trim()];
+    return parts;
   }
 
   private delay(ms: number): Promise<void> {
