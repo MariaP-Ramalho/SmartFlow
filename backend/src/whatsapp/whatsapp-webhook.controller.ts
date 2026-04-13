@@ -91,6 +91,8 @@ export class WhatsAppWebhookController {
   private readonly analystCollaborated = new Map<string, boolean>();
   /** Tracks the active atendimento ID for each phone/channel. */
   private readonly activeAtendimentoByPhone = new Map<string, number>();
+  /** Channels where the atendimento was transferred — agent should stop responding until a new atendimento arrives. */
+  private readonly transferredChannels = new Set<string>();
 
   /** Mensagens do sistema ZapFlow que NÃO são de clientes reais e devem ser ignoradas. */
   private static readonly ZAPFLOW_SYSTEM_PATTERNS: RegExp[] = [
@@ -101,6 +103,16 @@ export class WhatsAppWebhookController {
     /^Aguarde o retorno do cliente/i,
     /^Por favor, me informe como posso te ajudar/i,
     /^Prezado\(a\) .+, recebemos sua demanda/i,
+    /atendimento transferido/i,
+    /transferência realizada/i,
+    /transferido com sucesso/i,
+    /^Não foi possível processar o comando/i,
+    /^Reenvie o comando completo/i,
+  ];
+
+  /** Names that are ZapFlow system actors (not real clients). Messages from these are logged but never answered. */
+  private static readonly ZAPFLOW_SYSTEM_ACTORS: RegExp[] = [
+    /^zezinho$/i,
   ];
 
   /** Detects and parses the "new atendimento" notification from ZapFlow. */
@@ -154,6 +166,7 @@ export class WhatsAppWebhookController {
       ),
       analystCollaborations: Object.fromEntries(this.analystCollaborated),
       activeAtendimentos: Object.fromEntries(this.activeAtendimentoByPhone),
+      transferredChannels: [...this.transferredChannels],
       timestamp: new Date().toISOString(),
     };
   }
@@ -179,6 +192,7 @@ export class WhatsAppWebhookController {
       this.analystCooldown.clear();
       this.analystCollaborated.clear();
       this.activeAtendimentoByPhone.clear();
+      this.transferredChannels.clear();
       this.logger.log('All channels reset');
       return { reset: 'all' };
     }
@@ -190,6 +204,7 @@ export class WhatsAppWebhookController {
     this.analystCooldown.delete(phone);
     this.analystCollaborated.delete(phone);
     this.activeAtendimentoByPhone.delete(phone);
+    this.transferredChannels.delete(phone);
     this.chatService.clearSession(`wa-${phone}`);
     this.logger.log(`Channel ${phone} reset`);
     return { reset: phone };
@@ -277,6 +292,7 @@ export class WhatsAppWebhookController {
         this.analystCooldown.delete(phone);
         this.analystCollaborated.delete(phone);
         this.activeAtendimentoByPhone.delete(phone);
+        this.transferredChannels.delete(phone);
 
         const atd = zapflowParsed.atendimentoData;
         const clientName = atd?.cliente || name;
@@ -296,6 +312,23 @@ export class WhatsAppWebhookController {
         this.logger.log(`Starting atendimento #${ateId}: ${clientName} (${systemName}) on ${phone}`);
         this.bufferMessage(phone, clientName, greeting, systemName);
         return;
+      }
+
+      // --- Channel was transferred: ignore all messages until a new atendimento arrives ---
+      if (this.transferredChannels.has(phone)) {
+        this.logger.log(`Ignored message on transferred channel ${phone}: "${effectiveText.slice(0, 80)}"`);
+        return;
+      }
+
+      // --- Detect ZapFlow system actors (e.g. Zezinho reports) ---
+      if (zapflowParsed.clientName) {
+        const isSystemActor = WhatsAppWebhookController.ZAPFLOW_SYSTEM_ACTORS.some(
+          (pattern) => pattern.test(zapflowParsed.clientName!),
+        );
+        if (isSystemActor) {
+          this.logger.log(`System actor "${zapflowParsed.clientName}" on ${phone}: "${(zapflowParsed.clientMessage || '').slice(0, 120)}" — logged, not answered.`);
+          return;
+        }
       }
 
       const currentOwner = this.activeClientByPhone.get(phone);
@@ -736,6 +769,9 @@ export class WhatsAppWebhookController {
 
       // --- Process transfer commands (comando direto no atendimento) ---
       if (response.transferCommands?.length > 0) {
+        this.transferredChannels.add(phone);
+        this.logger.log(`Channel ${phone} marked as transferred — agent will stop responding.`);
+
         for (const cmd of response.transferCommands) {
           const sanitizedReason = (cmd.reason || '').replace(/[\n\r]+/g, ' ').replace(/,/g, ' ').trim().slice(0, 200);
           const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${sanitizedReason}`;
