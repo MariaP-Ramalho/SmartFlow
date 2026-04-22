@@ -5,18 +5,19 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import {
-  LayoutDashboard,
-  Ticket,
-  FileText,
-  BookOpen,
-  Bot,
-  PanelLeftClose,
-  PanelLeftOpen,
-  CheckCircle2,
-  Settings,
-  Users,
-  BarChart3,
+  Sparkles,
+  MessagesSquare,
+  Library,
+  ClipboardList,
+  LineChart,
+  ScrollText,
+  BookMarked,
+  UsersRound,
+  SlidersHorizontal,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
+import { SmartFlowLogo } from "@/components/brand/smart-flow-logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import type { LucideIcon } from "lucide-react";
 
@@ -28,14 +29,15 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Agente", href: "/agent", icon: Bot },
-  { label: "Atendimentos", href: "/tickets", icon: Ticket },
-  { label: "Relatórios", href: "/relatorios", icon: BarChart3 },
-  { label: "Auditoria", href: "/audit", icon: FileText },
-  { label: "Base de Conhecimento", href: "/knowledge", icon: BookOpen },
-  { label: "Usuários", href: "/users", icon: Users, adminOnly: true },
-  { label: "Configurações", href: "/settings", icon: Settings },
+  { label: "Agentes", href: "/agents", icon: Sparkles, adminOnly: true },
+  { label: "Histórico de Conversas", href: "/agent", icon: MessagesSquare },
+  { label: "Aprendizado", href: "/aprendizado", icon: Library },
+  { label: "Atendimentos", href: "/tickets", icon: ClipboardList },
+  { label: "Relatórios", href: "/relatorios", icon: LineChart },
+  { label: "Auditoria", href: "/audit", icon: ScrollText },
+  { label: "Base de Conhecimento", href: "/knowledge", icon: BookMarked },
+  { label: "Usuários", href: "/users", icon: UsersRound, adminOnly: true },
+  { label: "Configurações", href: "/settings", icon: SlidersHorizontal },
 ];
 
 export function Sidebar() {
@@ -54,14 +56,20 @@ export function Sidebar() {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex h-16 items-center gap-2 border-b border-slate-800 px-4">
-        <CheckCircle2 className="h-7 w-7 shrink-0 text-blue-400" />
-        {!collapsed && (
-          <span className="text-lg font-bold tracking-tight text-white">
-            Resolve
-          </span>
+      <Link
+        href="/"
+        className={cn(
+          "flex h-16 min-h-16 items-center gap-2 border-b border-slate-800 px-4 transition-opacity hover:opacity-95",
+          collapsed && "justify-center px-2",
         )}
-      </div>
+        title="SmartFlow — início"
+      >
+        <SmartFlowLogo
+          className={cn("rounded-xl shadow-md", collapsed ? "h-9 w-9" : "h-9 w-9")}
+          showWordmark={!collapsed}
+          wordmarkClassName="text-slate-100"
+        />
+      </Link>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
         {visibleItems.map((item) => {
@@ -95,9 +103,9 @@ export function Sidebar() {
           className="flex w-full items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
         >
           {collapsed ? (
-            <PanelLeftOpen className="h-5 w-5" />
+            <ChevronsRight className="h-5 w-5" />
           ) : (
-            <PanelLeftClose className="h-5 w-5" />
+            <ChevronsLeft className="h-5 w-5" />
           )}
         </button>
       </div>

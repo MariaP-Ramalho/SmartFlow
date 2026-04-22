@@ -16,28 +16,24 @@ export class AgentConfigService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
-    const defaultPrompt = buildAgentSystemPrompt({
-      systemName: '{{systemName}}',
-      customerName: '{{customerName}}',
-      customerPhone: '{{customerPhone}}',
-      entityName: '{{entityName}}',
-      previousMessagesCount: 0,
-      attemptCount: 0,
-    });
-
     const existing = await this.model.findOne({ configId: CONFIG_ID });
     if (!existing) {
+      const defaultPrompt = buildAgentSystemPrompt({
+        systemName: '{{systemName}}',
+        customerName: '{{customerName}}',
+        customerPhone: '{{customerPhone}}',
+        entityName: '{{entityName}}',
+        previousMessagesCount: 0,
+        attemptCount: 0,
+      });
+
       await this.model.create({
         configId: CONFIG_ID,
         systemPrompt: defaultPrompt,
       });
       this.logger.log('Default agent config created in database');
     } else {
-      await this.model.updateOne(
-        { configId: CONFIG_ID },
-        { $set: { systemPrompt: defaultPrompt } },
-      );
-      this.logger.log('Agent config system prompt updated to latest default');
+      this.logger.log('Agent config loaded from database (system prompt preserved)');
     }
 
     this.cachedConfig = await this.model.findOne({ configId: CONFIG_ID });
@@ -92,20 +88,17 @@ export class AgentConfigService implements OnModuleInit {
     previousMessagesCount: number;
     attemptCount: number;
   }): string {
-    if (!this.cachedConfig) {
-      return buildAgentSystemPrompt(context);
-    }
+    let prompt = this.cachedConfig?.systemPrompt || buildAgentSystemPrompt(context);
 
-    let prompt = this.cachedConfig.systemPrompt;
+    prompt = prompt
+      .replace(/\{\{systemName\}\}/g, context.systemName)
+      .replace(/\{\{customerName\}\}/g, context.customerName)
+      .replace(/\{\{customerPhone\}\}/g, context.customerPhone)
+      .replace(/\{\{entityName\}\}/g, context.entityName)
+      .replace(/\{\{previousMessagesCount\}\}/g, String(context.previousMessagesCount))
+      .replace(/\{\{attemptCount\}\}/g, String(context.attemptCount));
 
-    prompt = prompt.replace(/\{\{systemName\}\}/g, context.systemName);
-    prompt = prompt.replace(/\{\{customerName\}\}/g, context.customerName);
-    prompt = prompt.replace(/\{\{customerPhone\}\}/g, context.customerPhone);
-    prompt = prompt.replace(/\{\{entityName\}\}/g, context.entityName);
-    prompt = prompt.replace(/\{\{previousMessagesCount\}\}/g, String(context.previousMessagesCount));
-    prompt = prompt.replace(/\{\{attemptCount\}\}/g, String(context.attemptCount));
-
-    if (this.cachedConfig.customInstructions?.trim()) {
+    if (this.cachedConfig?.customInstructions?.trim()) {
       prompt += `\n\nINSTRUÇÕES ADICIONAIS DO ADMINISTRADOR:\n${this.cachedConfig.customInstructions}`;
     }
 

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CheckCircle2, Eye, EyeOff, Loader2, ArrowLeft, Check } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowLeft, Check } from "lucide-react";
+import { SmartFlowLogo } from "@/components/brand/smart-flow-logo";
 import api from "@/lib/api";
 
 export default function RegisterPage() {
@@ -41,13 +42,11 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900">
+    <div className="login-page-root flex items-center justify-center bg-slate-900">
       <div className="w-full max-w-md px-6">
         <div className="mb-8 flex flex-col items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-600">
-            <CheckCircle2 className="h-8 w-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Resolve</h1>
+          <SmartFlowLogo className="h-14 w-14 rounded-2xl shadow-xl shadow-blue-950/50" />
+          <h1 className="text-2xl font-bold text-white">SmartFlow</h1>
           <p className="text-sm text-slate-400">
             Plataforma de resolução inteligente
           </p>
@@ -206,7 +205,7 @@ export default function RegisterPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-500">
-          Resolve-to-Close &copy; {new Date().getFullYear()}
+          SmartFlow &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

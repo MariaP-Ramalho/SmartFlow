@@ -1,4 +1,15 @@
 services:
+  mongo:
+    image: mongo:7
+    container_name: resolve-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - resolve-mongo-data:/data/db
+    networks:
+      - resolve-network
+
   backend:
     build:
       context: ./backend
@@ -9,6 +20,10 @@ services:
       - "3003:3003"
     env_file:
       - ./backend/.env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/resolve-to-close
+    depends_on:
+      - mongo
     networks:
       - resolve-network
 
@@ -32,3 +47,6 @@ services:
 networks:
   resolve-network:
     driver: bridge
+
+volumes:
+  resolve-mongo-data:

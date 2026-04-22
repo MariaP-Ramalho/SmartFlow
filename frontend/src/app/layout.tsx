@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Resolve-to-Close",
+  title: "SmartFlow",
   description:
     "Plataforma inteligente de resolução de tickets com IA autônoma",
 };
@@ -21,7 +21,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-BR">
+    <html lang="pt-BR" className="dark">
       <body className={`${inter.variable} font-sans`}>
         <AuthProvider>
           <AppShell>{children}</AppShell>

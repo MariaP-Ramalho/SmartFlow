@@ -1,8 +1,9 @@
-import { Controller, Post, Get, Param, Body, HttpCode } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
+import { Controller, Post, Get, Param, Query, Body, HttpCode } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { IsString, IsOptional, IsObject } from 'class-validator';
 import { AgentService, ProcessCaseInput } from './agent.service';
 import { AuditService } from '../audit/audit.service';
+import { ReferenceCaseService } from './reference-case.service';
 
 class ProcessCaseDto {
   @IsString()
@@ -35,6 +36,7 @@ export class AgentController {
   constructor(
     private readonly agentService: AgentService,
     private readonly auditService: AuditService,
+    private readonly referenceCaseService: ReferenceCaseService,
   ) {}
 
   @Post('process')
@@ -63,6 +65,14 @@ export class AgentController {
       ticketId: body.caseId,
       message: body.message,
     });
+  }
+
+  @Get('reference-cases')
+  @ApiOperation({ summary: 'List recent reference cases (learned from analysts)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async listReferenceCases(@Query('limit') limit?: string) {
+    const lim = limit ? Math.min(50, Math.max(1, parseInt(limit, 10))) : 10;
+    return this.referenceCaseService.findRecent(lim);
   }
 
   @Get('status/:caseId')

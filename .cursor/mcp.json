@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "clickup": {
+      "command": "C:\\Program Files\\nodejs\\npx.cmd",
+      "args": ["-y", "mcp-remote", "https://mcp.clickup.com/mcp", "--header", "Authorization: Bearer pk_194435808_MAPEKI6L8ZLWFHUPQB5KS13R5DTCSVPE"],
+      "env": {
+        "PATH": "C:\\Program Files\\nodejs;C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\Wbem;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\"
+      }
+    }
+  }
+}

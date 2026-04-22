@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
 interface User {
@@ -80,16 +80,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/login");
   }, [router]);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-900">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
-      </div>
-    );
-  }
+  const value = useMemo(
+    () => ({ user, loading, login, logout }),
+    [user, loading, login, logout],
+  );
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={value}>
+      {loading && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center"
+          style={{ backgroundColor: "hsl(var(--background))" }}
+          aria-busy="true"
+          aria-label="Carregando sessão"
+        >
+          <div
+            className="h-8 w-8 animate-spin rounded-full"
+            style={{
+              border: "2px solid hsl(var(--primary))",
+              borderTopColor: "transparent",
+              borderRadius: "9999px",
+            }}
+          />
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );

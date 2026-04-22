@@ -623,4 +623,326 @@ export class ZapFlowPgService implements OnModuleInit {
     const escolhido = empatados[Math.floor(Math.random() * empatados.length)];
     return escolhido.tecnico;
   }
+
+  // ─── TRANSFERÊNCIA AUTOMATIZADA ──────────────────────────────
+
+  isHoliday(date?: Date): boolean {
+    const now = date || this.nowInBRT();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const holidays = this.getBrazilianHolidays(now.getFullYear());
+    return holidays.includes(dateStr);
+  }
+
+  isWithinBusinessHours(date?: Date): boolean {
+    const now = date || this.nowInBRT();
+    const day = now.getDay();
+    if (day === 0 || day === 6) return false;
+    const hour = now.getHours();
+    return hour >= 8 && hour < 18;
+  }
+
+  async getTecnicosBySystem(atendimentoId: number): Promise<ZapFlowTecnico[]> {
+    if (!this.mcp) return [];
+
+    const atd = await this.getAtendimento(atendimentoId);
+    if (!atd?.z90_ate_id_sistema_suporte) {
+      this.logger.warn(`Atendimento ${atendimentoId} has no system assigned`);
+      return [];
+    }
+    const systemId = atd.z90_ate_id_sistema_suporte;
+
+    // Try linking table first (z90_tecnicos_sistemas)
+    try {
+      const { rows } = await this.mcp.executeSelectQuery(
+        `SELECT t.z90_tec_id, t.z90_tec_nome, t.z90_tec_email, t.z90_tec_telefone,
+                t.z90_tec_ativo, t.z90_tec_disponivel_pa_91d0d83c AS z90_tec_disponivel,
+                t.z90_tec_desligado
+         FROM z90_tecnicos_sistemas ts
+         JOIN z90_tecnicos_suporte t ON ts.z90_tec_id = t.z90_tec_id
+         WHERE ts.z90_sis_id = ${this.esc(systemId)}
+           AND t.z90_tec_ativo = 'S'
+           AND (t.z90_tec_desligado IS NULL OR t.z90_tec_desligado != 'S')`,
+      );
+      if (rows.length > 0) {
+        this.logger.log(`Found ${rows.length} technicians for system ${systemId} via linking table`);
+        return rows as ZapFlowTecnico[];
+      }
+    } catch {
+      this.logger.debug('z90_tecnicos_sistemas table not found or query failed, using historical fallback');
+    }
+
+    // Fallback: technicians who handled atendimentos for this system recently
+    const { rows } = await this.safeQuery(
+      `SELECT DISTINCT ON (t.z90_tec_id)
+              t.z90_tec_id, t.z90_tec_nome, t.z90_tec_email, t.z90_tec_telefone,
+              t.z90_tec_ativo, t.z90_tec_disponivel_pa_91d0d83c AS z90_tec_disponivel,
+              t.z90_tec_desligado
+       FROM z90_tecnicos_suporte t
+       JOIN z90_atendimentos a ON a.z90_ate_id_tecnico_responsavel = t.z90_tec_id
+       WHERE a.z90_ate_id_sistema_suporte = ${this.esc(systemId)}
+         AND t.z90_tec_ativo = 'S'
+         AND (t.z90_tec_desligado IS NULL OR t.z90_tec_desligado != 'S')
+         AND a.z90_ate_data_abertura >= CURRENT_DATE - INTERVAL '90 days'
+       ORDER BY t.z90_tec_id`,
+      'getTecnicosBySystemFallback',
+    );
+    this.logger.log(`Found ${rows.length} technicians for system ${systemId} via historical fallback`);
+    return rows as ZapFlowTecnico[];
+  }
+
+  async getSystemCoordinator(atendimentoId: number): Promise<ZapFlowTecnico | null> {
+    if (!this.mcp) return null;
+
+    const atd = await this.getAtendimento(atendimentoId);
+    if (!atd?.z90_ate_id_sistema_suporte) return null;
+    const systemId = atd.z90_ate_id_sistema_suporte;
+
+    // Try coordinator field on system table
+    try {
+      const { rows } = await this.mcp.executeSelectQuery(
+        `SELECT t.z90_tec_id, t.z90_tec_nome, t.z90_tec_email, t.z90_tec_telefone,
+                t.z90_tec_ativo, t.z90_tec_disponivel_pa_91d0d83c AS z90_tec_disponivel,
+                t.z90_tec_desligado
+         FROM z90_sistemas_suporte s
+         JOIN z90_tecnicos_suporte t ON s.z90_sis_id_coordenador = t.z90_tec_id
+         WHERE s.z90_sis_id = ${this.esc(systemId)}
+           AND t.z90_tec_ativo = 'S'`,
+      );
+      if (rows.length > 0) return rows[0] as ZapFlowTecnico;
+    } catch {
+      this.logger.debug('No coordinator field found on z90_sistemas_suporte');
+    }
+
+    // Fallback: first active technician (usually senior/coordinator) as default
+    const { rows } = await this.safeQuery(
+      `SELECT z90_tec_id, z90_tec_nome, z90_tec_email, z90_tec_telefone,
+              z90_tec_ativo, z90_tec_disponivel_pa_91d0d83c AS z90_tec_disponivel,
+              z90_tec_desligado
+       FROM z90_tecnicos_suporte
+       WHERE z90_tec_ativo = 'S'
+         AND (z90_tec_desligado IS NULL OR z90_tec_desligado != 'S')
+       ORDER BY z90_tec_id ASC
+       LIMIT 1`,
+      'getDefaultCoordinator',
+    );
+    return (rows[0] as ZapFlowTecnico) || null;
+  }
+
+  /**
+   * Full validation + technician selection for automated transfer.
+   * Implements all 7 steps from the transfer protocol document.
+   */
+  async validateAndSelectForTransfer(atendimentoId: number, excludeTecnicoId?: number): Promise<{
+    canTransfer: boolean;
+    reason?: string;
+    selectedTecnicoId?: number;
+    selectedTecnicoName?: string;
+    isCoordinator?: boolean;
+  }> {
+    // Step 1: Holiday check
+    if (this.isHoliday()) {
+      this.logger.log(`Transfer blocked: today is a holiday`);
+      return { canTransfer: false, reason: 'Hoje é feriado. Não é possível transferir o atendimento neste momento.' };
+    }
+
+    // Step 2: Business hours check
+    if (!this.isWithinBusinessHours()) {
+      this.logger.log(`Transfer blocked: outside business hours`);
+      return { canTransfer: false, reason: 'Fora do horário de expediente (08:00-18:00, seg-sex). Não é possível transferir.' };
+    }
+
+    // Build exclusion set: always exclude the current attendant to avoid "idnovocolaborador = id_do_colaborador" error
+    const excludeIds = new Set<number>();
+    if (excludeTecnicoId) excludeIds.add(excludeTecnicoId);
+
+    if (atendimentoId > 0) {
+      try {
+        const atendimento = await this.getAtendimento(atendimentoId);
+        const currentTecId = atendimento?.z90_ate_id_tecnico_responsavel;
+        if (currentTecId) {
+          excludeIds.add(Number(currentTecId));
+          this.logger.log(`Excluding current attendant (ID ${currentTecId}) from transfer candidates`);
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not look up current attendant for atendimento ${atendimentoId}: ${err?.message}`);
+      }
+    }
+
+    const shouldExclude = (tecId: number) => excludeIds.has(tecId);
+
+    // Step 3: Get technicians for the system
+    let tecnicos = await this.getTecnicosBySystem(atendimentoId);
+    tecnicos = tecnicos.filter((t) => !shouldExclude(t.z90_tec_id));
+
+    if (tecnicos.length === 0) {
+      this.logger.warn(`No technicians found for atendimento ${atendimentoId}'s system`);
+      tecnicos = await this.getTecnicosDisponiveis();
+      tecnicos = tecnicos.filter((t) => !shouldExclude(t.z90_tec_id));
+    }
+
+    // Step 4: Filter by availability (active + online)
+    const isAvailable = (t: ZapFlowTecnico) => {
+      const val = String(t.z90_tec_disponivel || '').trim().toLowerCase();
+      return val === 's' || val === 'true' || val === '1' || val === 'sim';
+    };
+    const disponiveis = tecnicos.filter(isAvailable);
+
+    if (disponiveis.length === 0) {
+      this.logger.log(`No available technicians. Falling back to coordinator.`);
+      const coord = await this.getSystemCoordinator(atendimentoId);
+      if (coord && !shouldExclude(coord.z90_tec_id)) {
+        return {
+          canTransfer: true,
+          selectedTecnicoId: coord.z90_tec_id,
+          selectedTecnicoName: coord.z90_tec_nome,
+          isCoordinator: true,
+        };
+      }
+      return { canTransfer: false, reason: 'Nenhum técnico disponível no momento e coordenador não encontrado.' };
+    }
+
+    // Step 5: Select by workload (fewest active atendimentos)
+    const comCarga = await Promise.all(
+      disponiveis.map(async (t) => ({
+        tecnico: t,
+        carga: await this.countAtendimentosPorTecnico(t.z90_tec_id),
+      })),
+    );
+    comCarga.sort((a, b) => a.carga - b.carga);
+    const menorCarga = comCarga[0].carga;
+
+    // Step 6: Tiebreaker - random among equals
+    const empatados = comCarga.filter((t) => t.carga === menorCarga);
+    const escolhido = empatados[Math.floor(Math.random() * empatados.length)];
+
+    this.logger.log(
+      `Transfer target selected: ${escolhido.tecnico.z90_tec_nome} (id=${escolhido.tecnico.z90_tec_id}, carga=${escolhido.carga})`,
+    );
+
+    return {
+      canTransfer: true,
+      selectedTecnicoId: escolhido.tecnico.z90_tec_id,
+      selectedTecnicoName: escolhido.tecnico.z90_tec_nome,
+      isCoordinator: false,
+    };
+  }
+
+  // ─── UTILS INTERNOS ──────────────────────────────────────────
+
+  private nowInBRT(): Date {
+    return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+  }
+
+  private calculateEaster(year: number): Date {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31);
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month - 1, day);
+  }
+
+  private getBrazilianHolidays(year: number): string[] {
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const addDays = (d: Date, n: number) => {
+      const r = new Date(d);
+      r.setDate(r.getDate() + n);
+      return r;
+    };
+    const easter = this.calculateEaster(year);
+
+    return [
+      fmt(new Date(year, 0, 1)),    // Confraternização Universal
+      fmt(addDays(easter, -48)),     // Carnaval segunda
+      fmt(addDays(easter, -47)),     // Carnaval terça
+      fmt(addDays(easter, -2)),      // Sexta-feira Santa
+      fmt(new Date(year, 3, 21)),    // Tiradentes
+      fmt(new Date(year, 4, 1)),     // Dia do Trabalho
+      fmt(addDays(easter, 60)),      // Corpus Christi
+      fmt(new Date(year, 8, 7)),     // Independência
+      fmt(new Date(year, 9, 12)),    // Nossa Sra Aparecida
+      fmt(new Date(year, 10, 2)),    // Finados
+      fmt(new Date(year, 10, 15)),   // Proclamação da República
+      fmt(new Date(year, 11, 25)),   // Natal
+    ];
+  }
+
+  async getAgentWeeklyStats(tecnicoId: number, days = 7): Promise<any[]> {
+    if (!this.mcp) return [];
+    const results: any[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const stats = await this.getAgentDailyStats(tecnicoId, dateStr);
+      results.push(stats);
+    }
+    return results;
+  }
+
+  async getAgentPerformanceSummary(tecnicoId: number): Promise<Record<string, any>> {
+    if (!this.mcp) return {};
+
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const weekAgoStr = weekAgo.toISOString().split('T')[0];
+
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    const monthAgoStr = monthAgo.toISOString().split('T')[0];
+
+    const baseSub = `(
+      SELECT DISTINCT z90_ate_id FROM z90_interacoes_atendimento
+      WHERE z90_int_id_remetente_usuario IN (
+        SELECT z90_tec_id FROM z90_tecnicos_suporte WHERE z90_tec_id = ${this.esc(tecnicoId)}
+      ) OR z90_int_id_remetente_agente_ia IS NOT NULL
+      UNION
+      SELECT z90_ate_id FROM z90_atendimentos
+      WHERE z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}
+         OR z90_ate_id_agente_ia_inicial IS NOT NULL
+    )`;
+
+    const [weekTotal, weekResolved, weekTransferred, monthTotal, monthResolved, openNow, avgTimeRes] = await Promise.all([
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)}`, 'perfWeekTotal'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}`, 'perfWeekResolved'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)} AND a.z90_ate_id_tecnico_responsavel != ${this.esc(tecnicoId)}`, 'perfWeekTransferred'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(monthAgoStr)}`, 'perfMonthTotal'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_abertura >= ${this.esc(monthAgoStr)} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)}`, 'perfMonthResolved'),
+      this.safeQuery(`SELECT COUNT(*) AS cnt FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_id_status_atendimento IN (1, 2)`, 'perfOpen'),
+      this.safeQuery(`SELECT AVG(EXTRACT(EPOCH FROM (a.z90_ate_data_fechamento - a.z90_ate_data_abertura))/60) AS avg_min FROM z90_atendimentos a WHERE a.z90_ate_id IN ${baseSub} AND a.z90_ate_data_fechamento IS NOT NULL AND a.z90_ate_id_tecnico_responsavel = ${this.esc(tecnicoId)} AND a.z90_ate_data_abertura >= ${this.esc(weekAgoStr)}`, 'perfAvgTime'),
+    ]);
+
+    const wt = parseInt(weekTotal.rows[0]?.cnt || '0', 10);
+    const wr = parseInt(weekResolved.rows[0]?.cnt || '0', 10);
+    const wtr = parseInt(weekTransferred.rows[0]?.cnt || '0', 10);
+    const mt = parseInt(monthTotal.rows[0]?.cnt || '0', 10);
+    const mr = parseInt(monthResolved.rows[0]?.cnt || '0', 10);
+
+    return {
+      week: {
+        total: wt,
+        resolved: wr,
+        transferred: wtr,
+        resolutionRate: wt > 0 ? Math.round((wr / wt) * 100) : 0,
+      },
+      month: {
+        total: mt,
+        resolved: mr,
+        resolutionRate: mt > 0 ? Math.round((mr / mt) * 100) : 0,
+      },
+      openNow: parseInt(openNow.rows[0]?.cnt || '0', 10),
+      avgResolutionMinutes: Math.round(parseFloat(avgTimeRes.rows[0]?.avg_min || '0')),
+    };
+  }
 }

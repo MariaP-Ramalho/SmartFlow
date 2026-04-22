@@ -24,6 +24,12 @@ export interface ChatInput {
   sessionId?: string;
   systemName: string;
   customerName: string;
+  atendimentoId?: number;
+  agentTecnicoId?: number;
+  agentSystemPrompt?: string;
+  agentChatModel?: string;
+  agentCustomInstructions?: string;
+  excludeTools?: string[];
 }
 
 export interface ManagerNotification {
@@ -37,6 +43,15 @@ export interface AgentMessageSourcesMeta {
   toolsUsed: string[];
   knowledge: { id: string; title: string; source?: string }[];
   pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
+}
+
+export interface TransferCommand {
+  atendimentoId: number;
+  targetTecnicoId: number;
+  targetTecnicoName: string;
+  isCoordinator: boolean;
+  reason: string;
+  timestamp: string;
 }
 
 export interface ChatResponse {
@@ -53,6 +68,7 @@ export interface ChatResponse {
   totalDurationMs: number;
   conversationLength: number;
   managerNotifications: ManagerNotification[];
+  transferCommands: TransferCommand[];
 }
 
 interface ChatSession {
@@ -129,16 +145,24 @@ export class ChatService {
 
     const config = await this.agentConfig.getConfig();
     MAX_TOOL_ITERATIONS = config?.maxToolIterations || 5;
-    const chatModel = config?.chatModel || undefined;
+    const chatModel = input.agentChatModel || config?.chatModel || undefined;
 
-    const systemPrompt = this.agentConfig.buildPromptForSession({
-      systemName: session.systemName,
-      customerName: session.customerName,
-      customerPhone: '',
-      entityName: 'Teste via Interface',
-      previousMessagesCount: session.conversationHistory.length,
-      attemptCount: session.attemptCount,
-    });
+    let systemPrompt: string;
+    if (input.agentSystemPrompt) {
+      systemPrompt = input.agentSystemPrompt;
+      if (input.agentCustomInstructions?.trim()) {
+        systemPrompt += `\n\nINSTRUÇÕES ADICIONAIS:\n${input.agentCustomInstructions}`;
+      }
+    } else {
+      systemPrompt = this.agentConfig.buildPromptForSession({
+        systemName: session.systemName,
+        customerName: session.customerName,
+        customerPhone: '',
+        entityName: 'Teste via Interface',
+        previousMessagesCount: session.conversationHistory.length,
+        attemptCount: session.attemptCount,
+      });
+    }
 
     session.messages = [{ role: 'system', content: systemPrompt }];
     for (const msg of session.conversationHistory) {
@@ -171,6 +195,8 @@ export class ChatService {
         systemName: session.systemName,
         customerName: session.customerName,
         isTestChat: !isWhatsApp,
+        ...(input.atendimentoId ? { atendimentoId: input.atendimentoId } : {}),
+        ...(input.agentTecnicoId ? { agentTecnicoId: input.agentTecnicoId } : {}),
       },
     };
 
@@ -179,6 +205,7 @@ export class ChatService {
       context,
       steps,
       chatModel,
+      input.excludeTools,
     );
 
     if (result.reply) {
@@ -214,6 +241,8 @@ export class ChatService {
 
     const managerNotifications: ManagerNotification[] =
       context.metadata?.managerNotifications || [];
+    const transferCommands: TransferCommand[] =
+      context.metadata?.transferCommands || [];
 
     return {
       sessionId: session.id,
@@ -227,6 +256,7 @@ export class ChatService {
       totalDurationMs: Date.now() - startTime,
       conversationLength: session.conversationHistory.length,
       managerNotifications,
+      transferCommands,
     };
   }
 
@@ -235,6 +265,7 @@ export class ChatService {
     context: AgentContext,
     steps: ReasoningStep[],
     model?: string,
+    excludeTools?: string[],
   ): Promise<{
     reply: string;
     hasError: boolean;
@@ -244,11 +275,15 @@ export class ChatService {
     pastCases: { atendimentoId: number; sistema?: string; problemaPreview?: string }[];
     allSteps: ReasoningStep[];
   }> {
-    const toolDefinitions = this.toolRegistry.getDefinitions().map((def) => ({
+    let toolDefinitions = this.toolRegistry.getDefinitions().map((def) => ({
       name: def.name,
       description: def.description,
       parameters: def.parameters,
     }));
+
+    if (excludeTools?.length) {
+      toolDefinitions = toolDefinitions.filter((t) => !excludeTools.includes(t.name));
+    }
 
     const toolsUsed: string[] = [];
     const knowledgeRefs: string[] = [];

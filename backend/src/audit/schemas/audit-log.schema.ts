@@ -11,7 +11,7 @@ export class AuditLog {
   @Prop({ required: true, index: true })
   action: string;
 
-  @Prop({ required: true, enum: ['agent', 'human', 'system'], default: 'agent' })
+  @Prop({ required: true, enum: ['agent', 'human', 'system', 'vapi'], default: 'agent' })
   actor: string;
 
   @Prop()

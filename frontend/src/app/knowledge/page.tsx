@@ -321,7 +321,7 @@ export default function KnowledgeBasePage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Base de Conhecimento</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Base de Conhecimento</h1>
           <p className="mt-1 text-sm text-slate-500">
             Fontes de dados que o agente consulta para resolver atendimentos
           </p>
@@ -340,7 +340,7 @@ export default function KnowledgeBasePage() {
             </div>
             <div>
               <p className="text-sm text-slate-500">Fontes Ativas</p>
-              <p className="text-2xl font-bold text-slate-900">{activeSources.length}</p>
+              <p className="text-2xl font-bold text-slate-100">{activeSources.length}</p>
             </div>
           </CardContent>
         </Card>
@@ -351,25 +351,25 @@ export default function KnowledgeBasePage() {
             </div>
             <div>
               <p className="text-sm text-slate-500">Documentos na KB</p>
-              <p className="text-2xl font-bold text-slate-900">{kbStats.total}</p>
+              <p className="text-2xl font-bold text-slate-100">{kbStats.total}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="flex items-center gap-4 p-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-950/60 ring-1 ring-amber-800/50">
               <AlertCircle className="h-5 w-5 text-amber-600" />
             </div>
             <div>
               <p className="text-sm text-slate-500">Pendentes</p>
-              <p className="text-2xl font-bold text-slate-900">{inactiveSources.length}</p>
+              <p className="text-2xl font-bold text-slate-100">{inactiveSources.length}</p>
             </div>
           </CardContent>
         </Card>
       </div>
 
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-slate-900">Fontes Configuradas</h2>
+        <h2 className="text-lg font-semibold text-slate-100">Fontes Configuradas</h2>
         {sources.map((source) => {
           const config = TYPE_CONFIG[source.type] || TYPE_CONFIG.database;
           const Icon = config.icon;
@@ -382,12 +382,12 @@ export default function KnowledgeBasePage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-base font-semibold text-slate-900">{source.name}</h3>
+                      <h3 className="text-base font-semibold text-slate-100">{source.name}</h3>
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
                           source.status === "active"
-                            ? "bg-green-50 text-green-700 border border-green-200"
-                            : "bg-slate-100 text-slate-500 border border-slate-200"
+                            ? "bg-emerald-950/50 text-emerald-300 border border-emerald-800/60"
+                            : "bg-slate-100 text-slate-500 border border-slate-800"
                         }`}
                       >
                         {source.status === "active" ? (
@@ -405,7 +405,7 @@ export default function KnowledgeBasePage() {
                           <span className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
                             {key}
                           </span>
-                          <p className="text-sm font-medium text-slate-700">{String(val)}</p>
+                          <p className="text-sm font-medium text-slate-300">{String(val)}</p>
                         </div>
                       ))}
                     </div>
@@ -435,7 +435,7 @@ export default function KnowledgeBasePage() {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 searchSource === "kb"
                   ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                  : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
+                  : "bg-slate-100 text-slate-500 border border-slate-800 hover:bg-slate-200"
               }`}
             >
               Manuais (KB)
@@ -445,8 +445,8 @@ export default function KnowledgeBasePage() {
               onClick={() => setSearchSource("zapflow")}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 searchSource === "zapflow"
-                  ? "bg-blue-100 text-blue-700 border border-blue-300"
-                  : "bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200"
+                  ? "bg-blue-950/60 text-blue-300 border border-blue-800/60"
+                  : "bg-slate-100 text-slate-500 border border-slate-800 hover:bg-slate-200"
               }`}
             >
               Atendimentos (ZapFlow)
@@ -463,7 +463,7 @@ export default function KnowledgeBasePage() {
                   ? "Ex: como criar folha de pagamento, configurar evento, exportar SIOPE..."
                   : "Ex: erro ao emitir nota fiscal, listagem de patrimônio..."
               }
-              className="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="flex-1 rounded-lg border border-slate-700 px-4 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
             <Button onClick={handleSearch} disabled={searching || !searchQuery.trim()}>
               {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
@@ -483,7 +483,7 @@ export default function KnowledgeBasePage() {
                   {searchResults.map((r: any, i: number) => (
                     <div
                       key={i}
-                      className="rounded-lg border border-slate-200 p-3 hover:bg-slate-50 transition-colors"
+                      className="rounded-lg border border-slate-800 p-3 hover:bg-slate-900/50 transition-colors"
                     >
                       {searchSource === "kb" ? (
                         <>
@@ -492,7 +492,7 @@ export default function KnowledgeBasePage() {
                               {r.category || r.source || "manual"}
                             </span>
                           </div>
-                          <p className="text-sm font-medium text-slate-800 mb-1">
+                          <p className="text-sm font-medium text-slate-200 mb-1">
                             {r.title || "Sem título"}
                           </p>
                           <p className="text-xs text-slate-500 line-clamp-3">
@@ -518,7 +518,7 @@ export default function KnowledgeBasePage() {
                               {r.sistema || "—"}
                             </span>
                           </div>
-                          <p className="text-sm text-slate-700">
+                          <p className="text-sm text-slate-300">
                             {r.z90_ate_resumo_do_problema || r.resumo || "Sem descrição"}
                           </p>
                           <p className="mt-1 text-xs text-slate-400">
@@ -536,7 +536,7 @@ export default function KnowledgeBasePage() {
       </Card>
 
       {isAdmin && (
-        <Card className="border-amber-200 bg-amber-50/30">
+        <Card className="border-amber-800/50 bg-amber-950/20">
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center justify-between gap-3">
               <span>Gerenciar documentos (administrador)</span>
@@ -553,7 +553,7 @@ export default function KnowledgeBasePage() {
                 placeholder="Filtrar lista por título ou conteúdo..."
                 value={adminSearchInput}
                 onChange={(e) => setAdminSearchInput(e.target.value)}
-                className="min-w-[200px] flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                className="min-w-[200px] flex-1 rounded-lg border border-slate-800 px-3 py-2 text-sm"
               />
               <Button variant="outline" size="sm" onClick={() => fetchAdminList()} disabled={adminLoading}>
                 {adminLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -565,10 +565,10 @@ export default function KnowledgeBasePage() {
               {adminTotal} documento(s) · Página {adminPage} de {adminTotalPages}
             </p>
 
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/80">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b bg-slate-50">
+                  <tr className="border-b bg-slate-900/50">
                     <th className="px-3 py-2 text-left font-medium text-slate-500">Título</th>
                     <th className="px-3 py-2 text-left font-medium text-slate-500">Categoria</th>
                     <th className="px-3 py-2 text-left font-medium text-slate-500">Origem</th>
@@ -577,12 +577,12 @@ export default function KnowledgeBasePage() {
                 </thead>
                 <tbody>
                   {adminList.map((doc) => (
-                    <tr key={doc._id} className="border-b border-slate-100 hover:bg-slate-50/80">
+                    <tr key={doc._id} className="border-b border-slate-800 hover:bg-slate-900/50/80">
                       <td className="px-3 py-2 max-w-[280px]">
-                        <span className="line-clamp-2 font-medium text-slate-800">{doc.title}</span>
+                        <span className="line-clamp-2 font-medium text-slate-200">{doc.title}</span>
                       </td>
-                      <td className="px-3 py-2 text-slate-600">{doc.category || "—"}</td>
-                      <td className="px-3 py-2 text-slate-600">{doc.source || "—"}</td>
+                      <td className="px-3 py-2 text-slate-400">{doc.category || "—"}</td>
+                      <td className="px-3 py-2 text-slate-400">{doc.source || "—"}</td>
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         <button
                           type="button"
@@ -595,7 +595,7 @@ export default function KnowledgeBasePage() {
                         <button
                           type="button"
                           onClick={() => deleteDoc(doc._id, doc.title)}
-                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 ml-1"
+                          className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-red-400 hover:bg-red-950/40 ml-1"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           Excluir
@@ -637,15 +637,15 @@ export default function KnowledgeBasePage() {
 
             {editorOpen && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 overflow-y-auto">
-                <div className="w-full max-w-3xl rounded-xl bg-white p-6 shadow-xl my-8">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                <div className="w-full max-w-3xl rounded-xl bg-slate-900/80 p-6 shadow-xl my-8">
+                  <h3 className="text-lg font-semibold text-slate-100 mb-4">
                     {editingId ? "Editar documento" : "Novo documento"}
                   </h3>
                   <div className="space-y-3">
                     <div>
                       <label className="text-xs font-medium text-slate-500">Título</label>
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-slate-800 px-3 py-2 text-sm"
                         value={formTitle}
                         onChange={(e) => setFormTitle(e.target.value)}
                       />
@@ -654,7 +654,7 @@ export default function KnowledgeBasePage() {
                       <div>
                         <label className="text-xs font-medium text-slate-500">Categoria (opcional)</label>
                         <input
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-slate-800 px-3 py-2 text-sm"
                           value={formCategory}
                           onChange={(e) => setFormCategory(e.target.value)}
                           placeholder="Ex: Folha de Pagamento - Manual"
@@ -663,7 +663,7 @@ export default function KnowledgeBasePage() {
                       <div>
                         <label className="text-xs font-medium text-slate-500">Origem</label>
                         <select
-                          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                          className="mt-1 w-full rounded-lg border border-slate-800 px-3 py-2 text-sm"
                           value={formSource}
                           onChange={(e) => setFormSource(e.target.value)}
                         >
@@ -678,7 +678,7 @@ export default function KnowledgeBasePage() {
                     <div>
                       <label className="text-xs font-medium text-slate-500">Tags (separadas por vírgula)</label>
                       <input
-                        className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                        className="mt-1 w-full rounded-lg border border-slate-800 px-3 py-2 text-sm"
                         value={formTags}
                         onChange={(e) => setFormTags(e.target.value)}
                         placeholder="folha, procedimento, ..."
@@ -694,7 +694,7 @@ export default function KnowledgeBasePage() {
                         </label>
                       </div>
                       <textarea
-                        className="mt-1 w-full min-h-[220px] rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono"
+                        className="mt-1 w-full min-h-[220px] rounded-lg border border-slate-800 px-3 py-2 text-sm font-mono"
                         value={formContent}
                         onChange={(e) => setFormContent(e.target.value)}
                         placeholder="Texto que o agente poderá consultar na busca semântica..."
