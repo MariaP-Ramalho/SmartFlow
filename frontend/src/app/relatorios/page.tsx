@@ -64,18 +64,18 @@ function formatDateShort(iso: string): string {
 
 function statusLabel(id: number): { label: string; color: string } {
   switch (id) {
-    case 1: return { label: "Aberto", color: "bg-blue-100 text-blue-700" };
-    case 2: return { label: "Em Andamento", color: "bg-amber-100 text-amber-700" };
-    case 3: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
-    default: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
+    case 1: return { label: "Aberto", color: "bg-blue-950/60 text-blue-300" };
+    case 2: return { label: "Em Andamento", color: "bg-amber-950/60 text-amber-300" };
+    case 3: return { label: "Fechado", color: "bg-emerald-950/60 text-emerald-300" };
+    default: return { label: "Fechado", color: "bg-emerald-950/60 text-emerald-300" };
   }
 }
 
 function remetenteLabel(tipo: number): { label: string; color: string } {
   switch (tipo) {
-    case 1: return { label: "IA", color: "text-purple-600" };
-    case 2: return { label: "Analista", color: "text-blue-600" };
-    case 3: return { label: "Cliente", color: "text-slate-700" };
+    case 1: return { label: "IA", color: "text-purple-400" };
+    case 2: return { label: "Analista", color: "text-blue-400" };
+    case 3: return { label: "Cliente", color: "text-slate-300" };
     default: return { label: "Sistema", color: "text-slate-400" };
   }
 }
@@ -265,7 +265,7 @@ export default function RelatoriosPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Relatório do Agente</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Relatório do Agente</h1>
           <p className="mt-1 text-sm text-slate-500">
             Todos os atendimentos iniciados pelo agente, incluindo transferidos
           </p>
@@ -287,11 +287,11 @@ export default function RelatoriosPage() {
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-blue-50 p-2">
-                  <TrendingUp className="h-5 w-5 text-blue-600" />
+                <div className="rounded-lg bg-blue-950/60 p-2 ring-1 ring-blue-800/50">
+                  <TrendingUp className="h-5 w-5 text-blue-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-900">{stats.totalAtendimentos}</p>
+                  <p className="text-2xl font-bold text-slate-100">{stats.totalAtendimentos}</p>
                   <p className="text-xs text-slate-500">Total Hoje</p>
                 </div>
               </div>
@@ -300,11 +300,11 @@ export default function RelatoriosPage() {
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-emerald-50 p-2">
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                <div className="rounded-lg bg-emerald-950/60 p-2 ring-1 ring-emerald-800/50">
+                  <CheckCircle className="h-5 w-5 text-emerald-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-900">{stats.resolvidosPeloAgente}</p>
+                  <p className="text-2xl font-bold text-slate-100">{stats.resolvidosPeloAgente}</p>
                   <p className="text-xs text-slate-500">Resolvidos</p>
                 </div>
               </div>
@@ -313,11 +313,11 @@ export default function RelatoriosPage() {
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-amber-50 p-2">
-                  <ArrowRightLeft className="h-5 w-5 text-amber-600" />
+                <div className="rounded-lg bg-amber-950/60 p-2 ring-1 ring-amber-800/50">
+                  <ArrowRightLeft className="h-5 w-5 text-amber-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-900">{stats.transferidos}</p>
+                  <p className="text-2xl font-bold text-slate-100">{stats.transferidos}</p>
                   <p className="text-xs text-slate-500">Transferidos</p>
                 </div>
               </div>
@@ -326,11 +326,11 @@ export default function RelatoriosPage() {
           <Card>
             <CardContent className="pt-4">
               <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-red-50 p-2">
-                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                <div className="rounded-lg bg-red-950/60 p-2 ring-1 ring-red-800/50">
+                  <AlertTriangle className="h-5 w-5 text-red-400" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold text-slate-900">{stats.bugs}</p>
+                  <p className="text-2xl font-bold text-slate-100">{stats.bugs}</p>
                   <p className="text-xs text-slate-500">Bugs Identificados</p>
                 </div>
               </div>
@@ -354,7 +354,7 @@ export default function RelatoriosPage() {
               <select
                 value={tecnicoId}
                 onChange={(e) => { setTecnicoId(e.target.value); setPage(1); }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">Selecione</option>
                 {tecnicos.map((t) => (
@@ -370,7 +370,7 @@ export default function RelatoriosPage() {
               <select
                 value={sistemaId}
                 onChange={(e) => { setSistemaId(e.target.value); setPage(1); }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">Todos</option>
                 {sistemas.map((s) => (
@@ -387,7 +387,7 @@ export default function RelatoriosPage() {
                 type="date"
                 value={dataInicio}
                 onChange={(e) => { setDataInicio(e.target.value); setPage(1); }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               />
             </label>
 
@@ -399,7 +399,7 @@ export default function RelatoriosPage() {
                 type="date"
                 value={dataFim}
                 onChange={(e) => { setDataFim(e.target.value); setPage(1); }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               />
             </label>
           </div>
@@ -412,16 +412,16 @@ export default function RelatoriosPage() {
                 placeholder="Buscar por ID, cliente, sistema ou problema..."
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               />
             </div>
 
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm cursor-pointer hover:bg-slate-50">
+            <label className="flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-sm cursor-pointer hover:bg-slate-900/50">
               <input
                 type="checkbox"
                 checked={apenasTransferidos}
                 onChange={(e) => { setApenasTransferidos(e.target.checked); setPage(1); }}
-                className="rounded border-slate-300"
+                className="rounded border-slate-700"
               />
               <ArrowRightLeft className="h-3.5 w-3.5 text-amber-500" />
               Apenas transferidos
@@ -445,7 +445,7 @@ export default function RelatoriosPage() {
             <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
               <ChevronLeft className="h-4 w-4" /> Anterior
             </Button>
-            <span className="text-sm text-slate-600">{page} / {totalPages}</span>
+            <span className="text-sm text-slate-400">{page} / {totalPages}</span>
             <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
               Próxima <ChevronRight className="h-4 w-4" />
             </Button>
@@ -458,7 +458,7 @@ export default function RelatoriosPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/50">
+                <tr className="border-b border-slate-800 bg-slate-900/60">
                   <th className="w-[40px] px-2 py-3"></th>
                   <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500 w-[70px]">ID</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Cliente</th>
@@ -480,7 +480,7 @@ export default function RelatoriosPage() {
                     <>
                       <tr
                         key={a.z90_ate_id}
-                        className="border-b border-slate-100 hover:bg-blue-50/40 cursor-pointer transition-colors"
+                        className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors"
                         onClick={() => toggleInteracoes(a.z90_ate_id)}
                       >
                         <td className="px-2 py-2.5 text-center">
@@ -493,21 +493,21 @@ export default function RelatoriosPage() {
                           )}
                         </td>
                         <td className="px-4 py-2.5 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
-                        <td className="px-4 py-2.5 font-medium text-slate-700 max-w-[180px] truncate">{a.cliente || "—"}</td>
+                        <td className="px-4 py-2.5 font-medium text-slate-300 max-w-[180px] truncate">{a.cliente || "—"}</td>
                         <td className="px-4 py-2.5">
                           <Badge variant="info">{a.sistema || "—"}</Badge>
                         </td>
-                        <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-600">
+                        <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-400">
                           {a.z90_ate_resumo_do_problema || "Sem descrição"}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-600 max-w-[140px] truncate">{a.tecnico_atual || "—"}</td>
+                        <td className="px-4 py-2.5 text-slate-400 max-w-[140px] truncate">{a.tecnico_atual || "—"}</td>
                         <td className="px-4 py-2.5 text-center">
                           {a.transferido ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-950/60 px-2.5 py-0.5 text-[10px] font-semibold text-amber-300">
                               <ArrowRight className="h-3 w-3" /> Transferido
                             </span>
                           ) : (
-                            <span className="inline-block rounded-full bg-emerald-100 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <span className="inline-block rounded-full bg-emerald-950/60 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-300">
                               Próprio
                             </span>
                           )}
@@ -522,16 +522,16 @@ export default function RelatoriosPage() {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr key={`${a.z90_ate_id}-detail`} className="bg-slate-50/80">
+                        <tr key={`${a.z90_ate_id}-detail`} className="bg-slate-950/50">
                           <td colSpan={9} className="px-6 py-4">
                             <div className="space-y-3">
                               {a.z90_ate_resumo_da_solucao && (
-                                <div className="rounded-lg bg-white p-3 border border-slate-200">
+                                <div className="rounded-lg bg-slate-900/80 p-3 border border-slate-800">
                                   <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400 mb-1">Solução</p>
-                                  <p className="text-sm text-slate-700">{a.z90_ate_resumo_da_solucao}</p>
+                                  <p className="text-sm text-slate-300">{a.z90_ate_resumo_da_solucao}</p>
                                 </div>
                               )}
-                              <div className="rounded-lg bg-white p-3 border border-slate-200">
+                              <div className="rounded-lg bg-slate-900/80 p-3 border border-slate-800">
                                 <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400 mb-2">
                                   Interações ({caseInteracoes?.length || 0})
                                 </p>
@@ -553,7 +553,7 @@ export default function RelatoriosPage() {
                                           <span className={`text-xs font-semibold w-[60px] shrink-0 ${rem.color}`}>
                                             {rem.label}
                                           </span>
-                                          <span className="text-slate-600 break-words min-w-0">
+                                          <span className="text-slate-400 break-words min-w-0">
                                             {int.z90_int_conteudo_mensagem || "—"}
                                           </span>
                                         </div>

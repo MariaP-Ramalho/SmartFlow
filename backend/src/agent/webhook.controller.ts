@@ -119,11 +119,13 @@ export class WebhookController {
     this.logger.log(`Forced escalation — ateId=${body.zapflowAteId} reason=${body.reason}`);
 
     try {
+      const ticket = await this.conversationService.findTicketByZapflowAteId(body.zapflowAteId);
+      const ticketId = ticket?._id?.toString() || '';
       const result = await this.conversationService.escalateToHuman(
-        '',
+        ticketId,
         body.zapflowAteId,
         body.reason,
-        [],
+        ticket?.conversation || [],
       );
       return result;
     } catch (error) {

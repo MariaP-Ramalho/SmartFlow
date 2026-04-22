@@ -201,14 +201,43 @@ export class ZapFlowController {
   async getAgentDashboard(
     @Query('tecnicoId') tecnicoId?: string,
   ) {
-    const agentName = 'Renato Solves';
-    let tid = tecnicoId ? parseInt(tecnicoId, 10) : 0;
-    if (!tid) {
-      const tecnicos = await this.zapflow.getTecnicosDisponiveis();
-      const match = tecnicos.find(t => t.z90_tec_nome.toLowerCase().includes('renato'));
-      tid = match?.z90_tec_id || 0;
+    if (!this.zapflow.isConnected) {
+      const today = new Date().toISOString().split('T')[0];
+      return {
+        zapflowConnected: false,
+        tecnicoId: 0,
+        todayStats: {
+          date: today,
+          totalAtendimentos: 0,
+          resolvidosPeloAgente: 0,
+          transferidos: 0,
+          bugs: 0,
+        },
+        weeklyStats: [],
+        performance: {
+          week: { total: 0, resolved: 0, transferred: 0, resolutionRate: 0 },
+          month: { total: 0, resolved: 0, resolutionRate: 0 },
+          openNow: 0,
+          avgResolutionMinutes: null,
+        },
+      };
     }
-    if (!tid) return { error: 'Agente não encontrado' };
+
+    let tid = tecnicoId ? parseInt(tecnicoId, 10) : 0;
+    if (!tid || Number.isNaN(tid)) {
+      const tecnicos = await this.zapflow.getTecnicosDisponiveis();
+      const match = tecnicos.find((t) =>
+        t.z90_tec_nome.toLowerCase().includes('renato'),
+      );
+      tid = match?.z90_tec_id || tecnicos[0]?.z90_tec_id || 0;
+    }
+    if (!tid) {
+      return {
+        zapflowConnected: true,
+        error:
+          'Nenhum técnico ativo encontrado no ZapFlow para exibir o painel do agente.',
+      };
+    }
 
     const today = new Date().toISOString().split('T')[0];
     const [todayStats, weeklyStats, performance] = await Promise.all([
@@ -217,7 +246,13 @@ export class ZapFlowController {
       this.zapflow.getAgentPerformanceSummary(tid),
     ]);
 
-    return { tecnicoId: tid, todayStats, weeklyStats, performance };
+    return {
+      zapflowConnected: true,
+      tecnicoId: tid,
+      todayStats,
+      weeklyStats,
+      performance,
+    };
   }
 
   @Get('atendimentos/:id')

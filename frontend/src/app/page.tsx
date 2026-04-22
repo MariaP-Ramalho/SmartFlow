@@ -10,7 +10,7 @@ import {
 import api from "@/lib/api";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Line, Legend, AreaChart, Area,
+  ResponsiveContainer, Legend,
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/ui/stat-card";
@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [weeklyStats, setWeeklyStats] = useState<any[]>([]);
   const [performance, setPerformance] = useState<any>(null);
   const [recentTransfers, setRecentTransfers] = useState<any[]>([]);
+  const [zapflowOffline, setZapflowOffline] = useState(false);
 
   const fetchDashboard = useCallback(async (showSpinner = false) => {
     try {
@@ -57,6 +58,17 @@ export default function DashboardPage() {
       ]);
 
       const dash = dashRes.data;
+      if (dash.zapflowConnected === false) {
+        setZapflowOffline(true);
+        setTodayStats(dash.todayStats);
+        setWeeklyStats(dash.weeklyStats || []);
+        setPerformance(dash.performance);
+        setRecentTransfers([]);
+        setError("");
+        return;
+      }
+      setZapflowOffline(false);
+
       if (dash.error) {
         setError(dash.error);
         return;
@@ -94,7 +106,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
       </div>
     );
   }
@@ -104,7 +116,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <AlertTriangle className="mx-auto h-12 w-12 text-amber-400 mb-3" />
-          <p className="text-slate-600">{error}</p>
+          <p className="text-slate-400">{error}</p>
           <Button variant="outline" size="md" className="mt-4" onClick={() => fetchDashboard(true)}>
             Tentar novamente
           </Button>
@@ -116,7 +128,7 @@ export default function DashboardPage() {
   const weekResRate = performance?.week?.resolutionRate || 0;
   const monthResRate = performance?.month?.resolutionRate || 0;
 
-  const chartData = weeklyStats.map((s: any) => ({
+  const chartData = (Array.isArray(weeklyStats) ? weeklyStats : []).map((s: any) => ({
     date: formatDateShort(s.date),
     total: s.totalAtendimentos || 0,
     resolvidos: s.resolvidosPeloAgente || 0,
@@ -126,14 +138,27 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      {zapflowOffline && (
+        <div className="rounded-lg border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+          <p className="font-medium text-amber-100">ZapFlow não está conectado</p>
+          <p className="mt-1 text-amber-200/90">
+            Os números abaixo ficam zerados porque o backend não tem acesso ao PostgreSQL do ZapFlow.
+            Configure <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">ZAPFLOW_MCP_URL</code> e{" "}
+            <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">ZAPFLOW_MCP_TOKEN</code> no arquivo{" "}
+            <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">backend/.env</code> e reinicie a API.
+            O histórico de conversas, base de conhecimento e configurações usam o MongoDB e podem
+            funcionar separadamente.
+          </p>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Bot className="h-7 w-7 text-blue-500" />
+          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+            <Bot className="h-7 w-7 text-blue-400" />
             Painel do Agente
           </h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-slate-400">
             Desempenho e métricas em tempo real do agente de suporte
           </p>
         </div>
@@ -160,8 +185,8 @@ export default function DashboardPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Taxa de Resolução (7 dias)</p>
               <Target className="h-4 w-4 text-emerald-500" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{weekResRate}%</p>
-            <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
+            <p className="text-3xl font-bold text-slate-100">{weekResRate}%</p>
+            <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
               <div
                 className={`h-2 rounded-full transition-all ${weekResRate >= 70 ? "bg-emerald-500" : weekResRate >= 40 ? "bg-amber-500" : "bg-red-500"}`}
                 style={{ width: `${Math.min(100, weekResRate)}%` }}
@@ -179,8 +204,8 @@ export default function DashboardPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Taxa de Resolução (30 dias)</p>
               <TrendingUp className="h-4 w-4 text-blue-500" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{monthResRate}%</p>
-            <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
+            <p className="text-3xl font-bold text-slate-100">{monthResRate}%</p>
+            <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
               <div
                 className={`h-2 rounded-full transition-all ${monthResRate >= 70 ? "bg-emerald-500" : monthResRate >= 40 ? "bg-amber-500" : "bg-red-500"}`}
                 style={{ width: `${Math.min(100, monthResRate)}%` }}
@@ -198,7 +223,7 @@ export default function DashboardPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Tempo Médio de Resolução</p>
               <Clock className="h-4 w-4 text-indigo-500" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">
+            <p className="text-3xl font-bold text-slate-100">
               {performance?.avgResolutionMinutes ? `${performance.avgResolutionMinutes}` : "—"}
             </p>
             <p className="mt-1 text-xs text-slate-400">minutos (média últimos 7 dias)</p>
@@ -211,7 +236,7 @@ export default function DashboardPage() {
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Transferidos (7 dias)</p>
               <ArrowRightLeft className="h-4 w-4 text-amber-500" />
             </div>
-            <p className="text-3xl font-bold text-slate-900">{performance?.week?.transferred ?? 0}</p>
+            <p className="text-3xl font-bold text-slate-100">{performance?.week?.transferred ?? 0}</p>
             <p className="mt-1 text-xs text-slate-400">
               casos encaminhados para analistas humanos
             </p>
@@ -234,11 +259,17 @@ export default function DashboardPage() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 4, right: 12, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#64748b" }} />
-                  <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                  <YAxis tick={{ fontSize: 12, fill: "#94a3b8" }} allowDecimals={false} />
                   <Tooltip
-                    contentStyle={{ borderRadius: "8px", border: "1px solid #e2e8f0", fontSize: "13px" }}
+                    contentStyle={{
+                      borderRadius: "8px",
+                      border: "1px solid #334155",
+                      backgroundColor: "#0f172a",
+                      color: "#e2e8f0",
+                      fontSize: "13px",
+                    }}
                     formatter={(value: number, name: string) => {
                       const labels: Record<string, string> = {
                         total: "Total", resolvidos: "Resolvidos", transferidos: "Transferidos", bugs: "Bugs",
@@ -278,26 +309,26 @@ export default function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/50">
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500 w-[70px]">ID</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500">Cliente</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500">Sistema</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500">Problema</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500">Técnico Atual</th>
-                    <th className="px-4 py-2.5 text-left font-medium text-slate-500 w-[120px]">Data</th>
+                  <tr className="border-b border-slate-800 bg-slate-900/60">
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400 w-[70px]">ID</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400">Cliente</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400">Sistema</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400">Problema</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400">Técnico Atual</th>
+                    <th className="px-4 py-2.5 text-left font-medium text-slate-400 w-[120px]">Data</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentTransfers.map((a: any) => (
-                    <tr key={a.z90_ate_id} className="border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer"
+                    <tr key={a.z90_ate_id} className="border-b border-slate-800 hover:bg-slate-800/40 cursor-pointer"
                       onClick={() => router.push(`/relatorios`)}
                     >
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-700 max-w-[160px] truncate">{a.cliente || "—"}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-200 max-w-[160px] truncate">{a.cliente || "—"}</td>
                       <td className="px-4 py-2.5"><Badge variant="info">{a.sistema || "—"}</Badge></td>
-                      <td className="px-4 py-2.5 max-w-[220px] truncate text-slate-600">{a.z90_ate_resumo_do_problema || "—"}</td>
-                      <td className="px-4 py-2.5 text-slate-600 max-w-[130px] truncate">{a.tecnico_atual || "—"}</td>
-                      <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">{a.z90_ate_data_abertura ? formatDateFull(a.z90_ate_data_abertura) : "—"}</td>
+                      <td className="px-4 py-2.5 max-w-[220px] truncate text-slate-400">{a.z90_ate_resumo_do_problema || "—"}</td>
+                      <td className="px-4 py-2.5 text-slate-400 max-w-[130px] truncate">{a.tecnico_atual || "—"}</td>
+                      <td className="px-4 py-2.5 text-xs text-slate-500 whitespace-nowrap">{a.z90_ate_data_abertura ? formatDateFull(a.z90_ate_data_abertura) : "—"}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -59,6 +59,10 @@ export class ConversationService {
     private readonly toolRegistry: ToolRegistry,
   ) {}
 
+  async findTicketByZapflowAteId(zapflowAteId: number) {
+    return this.ticketsService.findByZapflowAteId(zapflowAteId);
+  }
+
   async startConversation(input: StartConversationInput): Promise<ConversationTurnResult> {
     const caseId = randomUUID();
     const turnStart = Date.now();
@@ -130,6 +134,7 @@ export class ConversationService {
         systemName: input.systemName,
         customerName: input.customerName,
         zapflowAteId: input.zapflowAteId,
+        atendimentoId: input.zapflowAteId,
       },
     };
 
@@ -270,6 +275,7 @@ export class ConversationService {
         systemName: (ticket as any).systemName,
         customerName: (ticket as any).customer?.name,
         zapflowAteId,
+        atendimentoId: zapflowAteId,
         attemptCount,
         currentPhase,
       },

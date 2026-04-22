@@ -105,7 +105,7 @@ export default function AprendizadoPage() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <GraduationCap className="h-7 w-7 text-indigo-500" />
             Aprendizado do Agente
           </h1>
@@ -126,7 +126,7 @@ export default function AprendizadoPage() {
             <div className="flex items-center gap-3">
               <div className="rounded-lg bg-indigo-50 p-2"><Brain className="h-5 w-5 text-indigo-600" /></div>
               <div>
-                <p className="text-2xl font-bold text-slate-900">{totalStudied}</p>
+                <p className="text-2xl font-bold text-slate-100">{totalStudied}</p>
                 <p className="text-xs text-slate-500">Casos Estudados</p>
               </div>
             </div>
@@ -135,9 +135,9 @@ export default function AprendizadoPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-amber-50 p-2"><ArrowRightLeft className="h-5 w-5 text-amber-600" /></div>
+              <div className="rounded-lg bg-amber-950/60 p-2 ring-1 ring-amber-800/50"><ArrowRightLeft className="h-5 w-5 text-amber-400" /></div>
               <div>
-                <p className="text-2xl font-bold text-slate-900">{totalTransferred}</p>
+                <p className="text-2xl font-bold text-slate-100">{totalTransferred}</p>
                 <p className="text-xs text-slate-500">Aprendeu com Analistas</p>
               </div>
             </div>
@@ -146,9 +146,9 @@ export default function AprendizadoPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-emerald-50 p-2"><CheckCircle className="h-5 w-5 text-emerald-600" /></div>
+              <div className="rounded-lg bg-emerald-950/60 p-2 ring-1 ring-emerald-800/50"><CheckCircle className="h-5 w-5 text-emerald-400" /></div>
               <div>
-                <p className="text-2xl font-bold text-slate-900">{totalResolved}</p>
+                <p className="text-2xl font-bold text-slate-100">{totalResolved}</p>
                 <p className="text-xs text-slate-500">Reforçou Conhecimento</p>
               </div>
             </div>
@@ -157,9 +157,9 @@ export default function AprendizadoPage() {
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-50 p-2"><BookOpen className="h-5 w-5 text-blue-600" /></div>
+              <div className="rounded-lg bg-blue-950/60 p-2 ring-1 ring-blue-800/50"><BookOpen className="h-5 w-5 text-blue-400" /></div>
               <div>
-                <p className="text-2xl font-bold text-slate-900">{kbTotal}</p>
+                <p className="text-2xl font-bold text-slate-100">{kbTotal}</p>
                 <p className="text-xs text-slate-500">Docs na Base</p>
               </div>
             </div>
@@ -178,10 +178,10 @@ export default function AprendizadoPage() {
         <CardContent>
           <div className="space-y-3">
             {totalTransferred > 0 && totalTransferred > totalResolved && (
-              <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <div className="flex items-start gap-3 rounded-lg border border-amber-800/60 bg-amber-950/30 p-3">
                 <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-amber-900">
+                  <p className="text-sm font-medium text-amber-200">
                     Mais transferências do que resoluções próprias
                   </p>
                   <p className="text-xs text-amber-700 mt-0.5">
@@ -193,11 +193,11 @@ export default function AprendizadoPage() {
             )}
 
             {daysWithLearning === 0 && (
-              <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+              <div className="flex items-start gap-3 rounded-lg border border-red-800/60 bg-red-950/30 p-3">
                 <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-sm font-medium text-red-900">Nenhum aprendizado registrado</p>
-                  <p className="text-xs text-red-700 mt-0.5">
+                  <p className="text-xs text-red-300 mt-0.5">
                     A rotina diária de estudo ainda não gerou registros. Verifique se o cron do backend está rodando corretamente (23h diariamente).
                   </p>
                 </div>
@@ -205,11 +205,11 @@ export default function AprendizadoPage() {
             )}
 
             {daysWithLearning > 0 && totalTransferred === 0 && (
-              <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-                <TrendingUp className="h-5 w-5 text-blue-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-blue-800/60 bg-blue-950/30 p-3">
+                <TrendingUp className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-blue-900">Sem casos transferidos para aprender</p>
-                  <p className="text-xs text-blue-700 mt-0.5">
+                  <p className="text-sm font-medium text-blue-200">Sem casos transferidos para aprender</p>
+                  <p className="text-xs text-blue-300/90 mt-0.5">
                     O agente não encontrou casos transferidos concluídos para estudar. Isso pode significar que está resolvendo bem ou que os casos transferidos ainda estão abertos.
                   </p>
                 </div>
@@ -217,13 +217,13 @@ export default function AprendizadoPage() {
             )}
 
             {refCases.total > 0 && (
-              <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                <CheckCircle className="h-5 w-5 text-emerald-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-emerald-800/60 bg-emerald-950/30 p-3">
+                <CheckCircle className="h-5 w-5 text-emerald-400 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-emerald-900">
+                  <p className="text-sm font-medium text-emerald-200">
                     {refCases.total} caso(s) de referência salvos
                   </p>
-                  <p className="text-xs text-emerald-700 mt-0.5">
+                  <p className="text-xs text-emerald-300/90 mt-0.5">
                     Estes são os casos onde analistas humanos resolveram problemas que o agente não conseguiu. Eles servem como modelo para futuras interações.
                   </p>
                 </div>
@@ -231,13 +231,13 @@ export default function AprendizadoPage() {
             )}
 
             {totalIngested > 0 && (
-              <div className="flex items-start gap-3 rounded-lg border border-purple-200 bg-purple-50 p-3">
-                <BookOpen className="h-5 w-5 text-purple-600 mt-0.5 shrink-0" />
+              <div className="flex items-start gap-3 rounded-lg border border-purple-800/60 bg-purple-950/30 p-3">
+                <BookOpen className="h-5 w-5 text-purple-400 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-sm font-medium text-purple-900">
+                  <p className="text-sm font-medium text-purple-200">
                     {totalIngested} documentos ingeridos do ZapFlow nos últimos 30 dias
                   </p>
-                  <p className="text-xs text-purple-700 mt-0.5">
+                  <p className="text-xs text-purple-300/90 mt-0.5">
                     Casos resolvidos no ZapFlow são automaticamente adicionados à base de conhecimento para consulta futura.
                   </p>
                 </div>
@@ -268,7 +268,7 @@ export default function AprendizadoPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/50">
+                  <tr className="border-b border-slate-800 bg-slate-900/50/50">
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Data</th>
                     <th className="px-4 py-3 text-center font-medium text-slate-500">Casos Estudados</th>
                     <th className="px-4 py-3 text-center font-medium text-slate-500">Aprendeu c/ Analistas</th>
@@ -282,12 +282,12 @@ export default function AprendizadoPage() {
                     const hasLearning = log.transferredLearned > 0 || log.resolvedLearned > 0;
 
                     return (
-                      <tr key={dayKey} className="border-b border-slate-100 hover:bg-slate-50/50">
-                        <td className="px-4 py-3 font-medium text-slate-700">
+                      <tr key={dayKey} className="border-b border-slate-800 hover:bg-slate-900/50/50">
+                        <td className="px-4 py-3 font-medium text-slate-300">
                           {formatDateBR(dayKey)}
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <span className="text-sm font-semibold text-slate-800">{log.totalCases}</span>
+                          <span className="text-sm font-semibold text-slate-200">{log.totalCases}</span>
                         </td>
                         <td className="px-4 py-3 text-center">
                           {log.transferredLearned > 0 ? (
@@ -309,7 +309,7 @@ export default function AprendizadoPage() {
                               <CheckCircle className="h-3 w-3" /> Aprendeu
                             </span>
                           ) : log.totalCases > 0 ? (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-slate-400">
                               Sem novidades
                             </span>
                           ) : (
@@ -338,16 +338,16 @@ export default function AprendizadoPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="divide-y divide-slate-100">
+            <div className="divide-y divide-slate-800">
               {refCases.recentCases.map((rc, i) => (
-                <div key={i} className="px-4 py-3 hover:bg-slate-50/50">
+                <div key={i} className="px-4 py-3 hover:bg-slate-900/50/50">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-slate-800">{rc.customerName}</span>
+                    <span className="text-sm font-medium text-slate-200">{rc.customerName}</span>
                     {rc.systemName && <Badge variant="info">{rc.systemName}</Badge>}
                     <span className="text-[10px] text-slate-400 ml-auto">{formatDateTimeBR(rc.createdAt)}</span>
                   </div>
                   {rc.problemSummary && (
-                    <p className="text-xs text-slate-600 mb-0.5">
+                    <p className="text-xs text-slate-400 mb-0.5">
                       <span className="font-medium text-slate-500">Problema:</span> {rc.problemSummary.slice(0, 200)}
                     </p>
                   )}

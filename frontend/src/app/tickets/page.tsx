@@ -50,7 +50,7 @@ function formatDate(iso: string): string {
 
 function statusLabel(id: number): { label: string; color: string } {
   switch (id) {
-    case 1: return { label: "Aberto", color: "bg-blue-100 text-blue-700" };
+    case 1: return { label: "Aberto", color: "bg-blue-950/60 text-blue-300" };
     case 2: return { label: "Em Andamento", color: "bg-amber-100 text-amber-700" };
     case 3: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
     default: return { label: "Fechado", color: "bg-emerald-100 text-emerald-700" };
@@ -74,6 +74,14 @@ export default function TicketsPage() {
   const [busca, setBusca] = useState("");
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [buscaDebounced, setBuscaDebounced] = useState("");
+  const [zapflowConnected, setZapflowConnected] = useState(true);
+
+  useEffect(() => {
+    api
+      .get("/zapflow/dashboard")
+      .then((r) => setZapflowConnected(!!r.data?.connected))
+      .catch(() => setZapflowConnected(false));
+  }, []);
 
   useEffect(() => {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -166,9 +174,20 @@ export default function TicketsPage() {
 
   return (
     <div className="space-y-6">
+      {!zapflowConnected && (
+        <div className="rounded-lg border border-amber-800/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+          <p className="font-medium text-amber-100">Lista vazia: ZapFlow não está conectado</p>
+          <p className="mt-1 text-amber-200/90">
+            Atendimentos vêm do banco ZapFlow via MCP. Defina{" "}
+            <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">ZAPFLOW_MCP_URL</code> e{" "}
+            <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">ZAPFLOW_MCP_TOKEN</code> em{" "}
+            <code className="rounded bg-amber-950/80 px-1 text-amber-100 ring-1 ring-amber-800/50">backend/.env</code> e reinicie o backend.
+          </p>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Atendimentos</h1>
+          <h1 className="text-2xl font-bold text-slate-100">Atendimentos</h1>
           <p className="mt-1 text-sm text-slate-500">
             {total} atendimento(s) encontrado(s)
             {totalPages > 1 ? ` · Página ${page} de ${totalPages}` : ""}
@@ -198,7 +217,7 @@ export default function TicketsPage() {
                   setSistemaId(e.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">Todos</option>
                 {sistemas.map((s) => (
@@ -219,7 +238,7 @@ export default function TicketsPage() {
                   setTecnicoId(e.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
                 <option value="">Todos</option>
                 {tecnicos.map((t) => (
@@ -240,7 +259,7 @@ export default function TicketsPage() {
                   setStatusId(e.target.value);
                   setPage(1);
                 }}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value || "all"} value={o.value}>
@@ -259,7 +278,7 @@ export default function TicketsPage() {
                 placeholder="Buscar por ID, cliente, sistema, técnico ou texto do problema..."
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                className="w-full rounded-lg border border-slate-800 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
               />
             </div>
             <Button
@@ -287,7 +306,7 @@ export default function TicketsPage() {
             <ChevronLeft className="h-4 w-4" />
             Anterior
           </Button>
-          <span className="text-sm text-slate-600">
+          <span className="text-sm text-slate-400">
             {page} / {totalPages}
           </span>
           <Button
@@ -307,7 +326,7 @@ export default function TicketsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-200 bg-slate-50/50">
+                <tr className="border-b border-slate-800 bg-slate-900/50/50">
                   <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500 w-[70px]">ID</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Cliente</th>
                   <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-500">Sistema</th>
@@ -323,18 +342,18 @@ export default function TicketsPage() {
                   return (
                     <tr
                       key={a.z90_ate_id}
-                      className="border-b border-slate-100 hover:bg-blue-50/40 cursor-pointer transition-colors"
+                      className="border-b border-slate-800 hover:bg-blue-50/40 cursor-pointer transition-colors"
                       onClick={() => router.push(`/tickets/zf-${a.z90_ate_id}`)}
                     >
                       <td className="px-4 py-2.5 font-mono text-xs text-slate-500">#{a.z90_ate_id}</td>
-                      <td className="px-4 py-2.5 font-medium text-slate-700 max-w-[180px] truncate">{a.cliente || "—"}</td>
+                      <td className="px-4 py-2.5 font-medium text-slate-300 max-w-[180px] truncate">{a.cliente || "—"}</td>
                       <td className="px-4 py-2.5">
                         <Badge variant="info">{a.sistema || "—"}</Badge>
                       </td>
-                      <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-600">
+                      <td className="px-4 py-2.5 max-w-[260px] truncate text-slate-400">
                         {a.z90_ate_resumo_do_problema || "Sem descrição"}
                       </td>
-                      <td className="px-4 py-2.5 text-slate-600 max-w-[140px] truncate">{a.tecnico || "—"}</td>
+                      <td className="px-4 py-2.5 text-slate-400 max-w-[140px] truncate">{a.tecnico || "—"}</td>
                       <td className="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
                         {a.z90_ate_data_abertura ? formatDate(a.z90_ate_data_abertura) : "—"}
                       </td>

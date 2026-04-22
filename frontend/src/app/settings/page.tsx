@@ -180,65 +180,65 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h2 className="text-2xl font-bold text-slate-900">Configurações</h2>
+      <h2 className="text-2xl font-bold text-slate-100">Configurações</h2>
 
       {/* Password section */}
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-6">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100">
-            <Lock className="h-5 w-5 text-blue-600" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-950/60 ring-1 ring-blue-800/50">
+            <Lock className="h-5 w-5 text-blue-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Alterar Senha</h3>
+            <h3 className="text-lg font-semibold text-slate-100">Alterar Senha</h3>
             <p className="text-sm text-slate-500">Logado como {user?.email}</p>
           </div>
         </div>
 
         <form onSubmit={handleChangePassword} className="space-y-4">
           {pwError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
               {pwError}
             </div>
           )}
           {pwSuccess && (
-            <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            <div className="flex items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-300">
               <Check className="h-4 w-4" />
               {pwSuccess}
             </div>
           )}
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Senha atual</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-300">Senha atual</label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Nova senha</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-300">Nova senha</label>
             <input
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-slate-700">Confirmar nova senha</label>
+            <label className="mb-1.5 block text-sm font-medium text-slate-300">Confirmar nova senha</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
@@ -261,14 +261,14 @@ export default function SettingsPage() {
 
       {/* WhatsApp config section (admin only) */}
       {isAdmin && (
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/80 p-6">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-100">
-                <MessageSquare className="h-5 w-5 text-green-600" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-950/60 ring-1 ring-emerald-800/50">
+                <MessageSquare className="h-5 w-5 text-emerald-400" />
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-slate-900">WhatsApp (Uazapi)</h3>
+                <h3 className="text-lg font-semibold text-slate-100">WhatsApp (Uazapi)</h3>
                 <p className="text-sm text-slate-500">Configuração da integração com WhatsApp</p>
               </div>
             </div>
@@ -277,8 +277,8 @@ export default function SettingsPage() {
                 <span
                   className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                     waConfig.connected
-                      ? "bg-green-100 text-green-700"
-                      : "bg-red-100 text-red-700"
+                      ? "bg-emerald-950/60 text-emerald-300"
+                      : "bg-red-950/60 text-red-300"
                   }`}
                 >
                   {waConfig.connected ? (
@@ -299,31 +299,31 @@ export default function SettingsPage() {
           ) : (
             <div className="space-y-4">
               {waError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <div className="rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
                   {waError}
                 </div>
               )}
               {waSuccess && (
-                <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                <div className="flex items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-300">
                   <Check className="h-4 w-4" />
                   {waSuccess}
                 </div>
               )}
 
               {/* Enabled toggle */}
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+              <div className="flex items-center justify-between rounded-lg border border-slate-800 px-4 py-3">
                 <div className="flex items-center gap-2">
                   <Power className="h-4 w-4 text-slate-500" />
-                  <span className="text-sm font-medium text-slate-700">Integração ativa</span>
+                  <span className="text-sm font-medium text-slate-300">Integração ativa</span>
                 </div>
                 <button
                   onClick={() => setWaForm((f) => ({ ...f, enabled: !f.enabled }))}
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
-                    waForm.enabled ? "bg-green-500" : "bg-slate-300"
+                    waForm.enabled ? "bg-green-500" : "bg-slate-600"
                   }`}
                 >
                   <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-slate-900/80 shadow ring-0 transition duration-200 ease-in-out ${
                       waForm.enabled ? "translate-x-5" : "translate-x-0"
                     }`}
                   />
@@ -332,7 +332,7 @@ export default function SettingsPage() {
 
               {/* Base URL */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <Globe className="h-3.5 w-3.5" />
                   URL Base (Uazapi)
                 </label>
@@ -341,13 +341,13 @@ export default function SettingsPage() {
                   value={waForm.uazapiBaseUrl}
                   onChange={(e) => setWaForm((f) => ({ ...f, uazapiBaseUrl: e.target.value }))}
                   placeholder="https://sua-instancia.uazapi.com"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               {/* Instance Token */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <Key className="h-3.5 w-3.5" />
                   Token da Instância
                 </label>
@@ -360,12 +360,12 @@ export default function SettingsPage() {
                       setWaTokenChanged(true);
                     }}
                     placeholder={waTokenChanged ? "Digite o novo token" : "••••••••••"}
-                    className="w-full rounded-lg border border-slate-300 px-4 py-2.5 pr-10 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full rounded-lg border border-slate-700 px-4 py-2.5 pr-10 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                   />
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-400"
                   >
                     {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
@@ -379,7 +379,7 @@ export default function SettingsPage() {
 
               {/* Gestor principal (alertas + espelhamento) */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <Phone className="h-3.5 w-3.5" />
                   Gestor principal (Cássio) — alertas e espelhamento
                 </label>
@@ -388,7 +388,7 @@ export default function SettingsPage() {
                   value={waForm.managerWhatsApp}
                   onChange={(e) => setWaForm((f) => ({ ...f, managerWhatsApp: e.target.value }))}
                   placeholder="5571988791615"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-xs text-slate-400">
                   Recebe confirmações de bug, pedidos de transferência, falhas do agente e o espelhamento das conversas.
@@ -398,7 +398,7 @@ export default function SettingsPage() {
 
               {/* Espelhamento extra (só cópia cliente/agente) */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <Phone className="h-3.5 w-3.5" />
                   Espelhamento adicional (somente conversa)
                 </label>
@@ -407,7 +407,7 @@ export default function SettingsPage() {
                   onChange={(e) => setWaForm((f) => ({ ...f, mirrorWhatsAppExtra: e.target.value }))}
                   placeholder="5571991975400, 5571991660891"
                   rows={2}
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-xs text-slate-400">
                   Números separados por vírgula. Recebem a mesma cópia do cliente e do agente que o gestor principal;
@@ -422,7 +422,7 @@ export default function SettingsPage() {
 
               {/* Agent Display Name */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <User className="h-3.5 w-3.5" />
                   Nome de Exibição do Agente
                 </label>
@@ -431,13 +431,13 @@ export default function SettingsPage() {
                   value={waForm.agentDisplayName}
                   onChange={(e) => setWaForm((f) => ({ ...f, agentDisplayName: e.target.value }))}
                   placeholder="Renato Solves"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
               </div>
 
               {/* Webhook URL */}
               <div>
-                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                <label className="mb-1.5 flex items-center gap-1.5 text-sm font-medium text-slate-300">
                   <Link2 className="h-3.5 w-3.5" />
                   URL do Webhook
                 </label>
@@ -446,7 +446,7 @@ export default function SettingsPage() {
                   value={waForm.webhookUrl}
                   onChange={(e) => setWaForm((f) => ({ ...f, webhookUrl: e.target.value }))}
                   placeholder="https://api-resolve.makernocode.dev/webhook/whatsapp"
-                  className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm text-slate-100 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                 />
                 <p className="mt-1 text-xs text-slate-400">
                   Configure esta URL no painel da Uazapi como webhook de mensagens recebidas
@@ -458,8 +458,8 @@ export default function SettingsPage() {
                 <div
                   className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${
                     waTestResult.ok
-                      ? "border-green-200 bg-green-50 text-green-700"
-                      : "border-red-200 bg-red-50 text-red-700"
+                      ? "border-emerald-800/60 bg-emerald-950/40 text-emerald-300"
+                      : "border-red-800/60 bg-red-950/40 text-red-300"
                   }`}
                 >
                   {waTestResult.ok ? (
@@ -479,7 +479,7 @@ export default function SettingsPage() {
               )}
 
               {/* Action buttons */}
-              <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
+              <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-4">
                 <button
                   onClick={handleSaveWhatsApp}
                   disabled={waSaving}
@@ -496,7 +496,7 @@ export default function SettingsPage() {
                 <button
                   onClick={handleTestConnection}
                   disabled={waTesting}
-                  className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                  className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900/50 disabled:opacity-60"
                 >
                   {waTesting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -508,7 +508,7 @@ export default function SettingsPage() {
 
                 <button
                   onClick={handleReload}
-                  className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                  className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900/80 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900/50"
                 >
                   <RefreshCw className="h-4 w-4" />
                   Reconectar

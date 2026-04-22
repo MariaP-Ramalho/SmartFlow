@@ -140,14 +140,14 @@ export default function AuditPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Trilha de Auditoria</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-100">Trilha de Auditoria</h1>
+        <p className="mt-1 text-sm text-slate-400">
           Registro completo de todas as ações do sistema
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">
           {error}
         </div>
       )}
@@ -168,11 +168,11 @@ export default function AuditPage() {
         <CardContent>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-600">Tipo de Ação</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-400">Tipo de Ação</label>
               <select
                 value={actionFilter}
                 onChange={(e) => setActionFilter(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 <option value="all">Todas</option>
                 {uniqueActions.map((a) => (
@@ -183,11 +183,11 @@ export default function AuditPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-600">Ator</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-400">Ator</label>
               <select
                 value={actorFilter}
                 onChange={(e) => setActorFilter(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/80 px-3 py-2 text-sm text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 <option value="all">Todos</option>
                 <option value="agent">Agente IA</option>
@@ -196,7 +196,7 @@ export default function AuditPage() {
               </select>
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-slate-600">Buscar Caso</label>
+              <label className="mb-1.5 block text-xs font-medium text-slate-400">Buscar Caso</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
@@ -204,7 +204,7 @@ export default function AuditPage() {
                   placeholder="ID do caso..."
                   value={searchCaseId}
                   onChange={(e) => setSearchCaseId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 py-2 pl-9 pr-3 text-sm text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900/80 py-2 pl-9 pr-3 text-sm text-slate-200 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>
@@ -229,13 +229,13 @@ export default function AuditPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/50">
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Data/Hora</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Caso</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Ação</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Ator</th>
-                    <th className="px-3 py-2.5 text-right font-medium text-slate-500">Duração</th>
-                    <th className="px-3 py-2.5 text-left font-medium text-slate-500">Detalhes</th>
+                  <tr className="border-b border-slate-800 bg-slate-900/60">
+                    <th className="px-3 py-2.5 text-left font-medium text-slate-400">Data/Hora</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-slate-400">Caso</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-slate-400">Ação</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-slate-400">Ator</th>
+                    <th className="px-3 py-2.5 text-right font-medium text-slate-400">Duração</th>
+                    <th className="px-3 py-2.5 text-left font-medium text-slate-400">Detalhes</th>
                     <th className="w-10"></th>
                   </tr>
                 </thead>
@@ -255,13 +255,13 @@ export default function AuditPage() {
                       <tr key={entry._id} className="group">
                         <td colSpan={7} className="p-0">
                           <div
-                            className="flex items-center border-b border-slate-50 px-3 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors"
+                            className="flex items-center border-b border-slate-800 px-3 py-2.5 hover:bg-slate-800/40 cursor-pointer transition-colors"
                             onClick={() => setExpandedRow(isExpanded ? null : entry._id)}
                           >
                             <span className="w-44 text-xs text-slate-500 shrink-0">
                               {formatTimestamp(entry.createdAt)}
                             </span>
-                            <span className="w-28 font-mono text-xs text-blue-600 shrink-0 truncate">
+                            <span className="w-28 font-mono text-xs text-blue-400 shrink-0 truncate">
                               {entry.caseId?.slice(0, 8)}...
                             </span>
                             <span className="w-40 shrink-0">
@@ -273,7 +273,7 @@ export default function AuditPage() {
                             <span className="w-20 text-right font-mono text-xs text-slate-500 shrink-0">
                               {entry.durationMs != null ? `${entry.durationMs}ms` : "—"}
                             </span>
-                            <span className="flex-1 ml-3 text-xs text-slate-600 truncate">
+                            <span className="flex-1 ml-3 text-xs text-slate-400 truncate">
                               {detailsToString(entry.details)}
                             </span>
                             <span className="w-6 shrink-0 text-slate-400">
@@ -286,19 +286,19 @@ export default function AuditPage() {
                           </div>
 
                           {isExpanded && (
-                            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
+                            <div className="border-b border-slate-800 bg-slate-950/50 px-6 py-4">
                               <div className="mb-3">
-                                <h4 className="text-sm font-semibold text-slate-700">
+                                <h4 className="text-sm font-semibold text-slate-200">
                                   Detalhes Completos
                                 </h4>
                                 {entry.error && (
-                                  <p className="mt-1 text-sm text-red-600">Erro: {entry.error}</p>
+                                  <p className="mt-1 text-sm text-red-400">Erro: {entry.error}</p>
                                 )}
                               </div>
                               {entry.details && (
                                 <div className="mb-3">
                                   <p className="mb-1 text-xs font-medium text-slate-500">Detalhes</p>
-                                  <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-slate-700 border border-slate-200">
+                                  <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-300 border border-slate-800">
                                     {JSON.stringify(entry.details, null, 2)}
                                   </pre>
                                 </div>
@@ -309,7 +309,7 @@ export default function AuditPage() {
                                     <p className="mb-1 text-xs font-medium text-slate-500">
                                       Entrada (Input)
                                     </p>
-                                    <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-slate-700 border border-slate-200">
+                                    <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-300 border border-slate-800">
                                       {JSON.stringify(entry.input, null, 2)}
                                     </pre>
                                   </div>
@@ -319,7 +319,7 @@ export default function AuditPage() {
                                     <p className="mb-1 text-xs font-medium text-slate-500">
                                       Saída (Output)
                                     </p>
-                                    <pre className="overflow-x-auto rounded-lg bg-white p-3 text-xs text-slate-700 border border-slate-200">
+                                    <pre className="overflow-x-auto rounded-lg bg-slate-900 p-3 text-xs text-slate-300 border border-slate-800">
                                       {JSON.stringify(entry.output, null, 2)}
                                     </pre>
                                   </div>

@@ -7,7 +7,6 @@ import {
   Wrench,
   BookOpen,
   AlertCircle,
-  Clock,
   ChevronRight,
   Loader2,
   Search,
@@ -76,30 +75,30 @@ function MessageSourcesPanel({ meta }: { meta?: AgentSourcesMeta | null }) {
   const knowledge = meta.knowledge ?? [];
   const pastCases = meta.pastCases ?? [];
   if (toolsUsed.length === 0 && knowledge.length === 0 && pastCases.length === 0) {
-    return <p className="text-xs leading-relaxed text-slate-600">Nenhuma ferramenta de busca usada nesta resposta.</p>;
+    return <p className="text-xs leading-relaxed text-slate-500">Nenhuma ferramenta de busca usada nesta resposta.</p>;
   }
   return (
     <div className="space-y-3 text-left">
       {toolsUsed.length > 0 && (
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">Ferramentas</p>
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-amber-400">Ferramentas</p>
           <ul className="flex flex-wrap gap-1.5">
             {toolsUsed.map((t) => (
-              <li key={t} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800">{t}</li>
+              <li key={t} className="rounded-full border border-amber-800/60 bg-amber-950/50 px-2 py-0.5 text-[10px] font-medium text-amber-300">{t}</li>
             ))}
           </ul>
         </div>
       )}
       {knowledge.length > 0 && (
         <div>
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-purple-800">
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-purple-300">
             <BookOpen className="h-3 w-3" /> Base de conhecimento
           </p>
           <ul className="space-y-2">
             {knowledge.map((doc) => (
-              <li key={doc.id} className="rounded-lg border border-purple-100 bg-purple-50/80 px-3 py-2 text-xs text-slate-800">
-                <span className="font-medium text-purple-900">{doc.title}</span>
-                {doc.source && <span className="mt-0.5 block text-[10px] text-purple-700/80">Categoria: {doc.source}</span>}
+              <li key={doc.id} className="rounded-lg border border-purple-800/50 bg-purple-950/40 px-3 py-2 text-xs text-slate-200">
+                <span className="font-medium text-purple-200">{doc.title}</span>
+                {doc.source && <span className="mt-0.5 block text-[10px] text-purple-400/90">Categoria: {doc.source}</span>}
               </li>
             ))}
           </ul>
@@ -107,15 +106,15 @@ function MessageSourcesPanel({ meta }: { meta?: AgentSourcesMeta | null }) {
       )}
       {pastCases.length > 0 && (
         <div>
-          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-sky-800">
+          <p className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-sky-300">
             <Database className="h-3 w-3" /> Casos ZapFlow
           </p>
           <ul className="space-y-2">
             {pastCases.map((c) => (
-              <li key={c.atendimentoId} className="rounded-lg border border-sky-100 bg-sky-50/80 px-3 py-2 text-xs text-slate-800">
-                <span className="font-semibold text-sky-900">#{c.atendimentoId}</span>
-                {c.sistema && <span className="ml-2 text-[10px] text-sky-800/90">· {c.sistema}</span>}
-                {c.problemaPreview && <p className="mt-1 text-[11px] leading-snug text-slate-600 line-clamp-4">{c.problemaPreview}</p>}
+              <li key={c.atendimentoId} className="rounded-lg border border-sky-800/50 bg-sky-950/40 px-3 py-2 text-xs text-slate-200">
+                <span className="font-semibold text-sky-200">#{c.atendimentoId}</span>
+                {c.sistema && <span className="ml-2 text-[10px] text-sky-300/90">· {c.sistema}</span>}
+                {c.problemaPreview && <p className="mt-1 text-[11px] leading-snug text-slate-500 line-clamp-4">{c.problemaPreview}</p>}
               </li>
             ))}
           </ul>
@@ -127,9 +126,9 @@ function MessageSourcesPanel({ meta }: { meta?: AgentSourcesMeta | null }) {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
-    active: "bg-green-50 text-green-700 border-green-200",
-    resolved: "bg-blue-50 text-blue-700 border-blue-200",
-    escalated: "bg-amber-50 text-amber-700 border-amber-200",
+    active: "bg-emerald-950/50 text-emerald-300 border-emerald-800/60",
+    resolved: "bg-blue-950/50 text-blue-300 border-blue-800/60",
+    escalated: "bg-amber-950/50 text-amber-300 border-amber-800/60",
   };
   return (
     <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${map[status] || map.active}`}>
@@ -215,12 +214,7 @@ export default function AgentPage() {
     }
   };
 
-  useEffect(() => {
-    if (tab === "history") loadHistory(1);
-    if (tab === "config" && isAdmin) loadConfig();
-  }, [tab, isAdmin, loadConfig]);
-
-  const loadHistory = async (page: number) => {
+  const loadHistory = useCallback(async (page: number) => {
     setHistoryLoading(true);
     try {
       const { data } = await api.get(`/agent/chat/history?page=${page}&limit=15`);
@@ -232,7 +226,12 @@ export default function AgentPage() {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (tab === "history") loadHistory(1);
+    if (tab === "config" && isAdmin) loadConfig();
+  }, [tab, isAdmin, loadConfig, loadHistory]);
 
   const loadSessionDetail = async (sid: string) => {
     setHistoryDetailLoading(true);
@@ -249,11 +248,11 @@ export default function AgentPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-7.5rem)]">
-      <div className="flex items-center gap-1 mb-3 border-b border-slate-200 pb-2">
+      <div className="flex items-center gap-1 mb-3 border-b border-slate-800 pb-2">
         <button
           onClick={() => { setTab("history"); setHistoryDetail(null); }}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-            tab === "history" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+            tab === "history" ? "bg-blue-950/60 text-blue-300" : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/50"
           }`}
         >
           <History className="h-4 w-4" /> Histórico
@@ -262,7 +261,7 @@ export default function AgentPage() {
           <button
             onClick={() => setTab("config")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              tab === "config" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+              tab === "config" ? "bg-blue-950/60 text-blue-300" : "text-slate-500 hover:text-slate-300 hover:bg-slate-900/50"
             }`}
           >
             <Settings className="h-4 w-4" /> Configurações
@@ -274,7 +273,7 @@ export default function AgentPage() {
       {tab === "history" && !historyDetail && (
         <div className="flex-1 flex flex-col min-h-0">
           <div className="mb-3 flex items-center justify-between">
-            <h1 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <h1 className="text-lg font-bold text-slate-100 flex items-center gap-2">
               <History className="h-5 w-5 text-blue-500" /> Histórico de Conversas
             </h1>
             <Button variant="outline" size="sm" onClick={() => loadHistory(historyPage)}>
@@ -284,16 +283,16 @@ export default function AgentPage() {
 
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
               <input
                 type="text" value={historySearch} onChange={(e) => setHistorySearch(e.target.value)}
                 placeholder="Buscar por cliente, sistema ou mensagem..."
-                className="w-full rounded-lg border border-slate-200 py-1.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+                className="w-full rounded-lg border border-slate-800 py-1.5 pl-9 pr-3 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-500/30"
               />
             </div>
             <select
               value={historyStatusFilter} onChange={(e) => setHistoryStatusFilter(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+              className="rounded-lg border border-slate-800 bg-slate-900/90 px-3 py-1.5 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-500/30"
             >
               <option value="">Todos os status</option>
               <option value="active">Ativo</option>
@@ -305,7 +304,7 @@ export default function AgentPage() {
           {historyLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 className="h-6 w-6 animate-spin text-blue-400" />
-              <span className="ml-2 text-sm text-slate-400">Carregando...</span>
+              <span className="ml-2 text-sm text-slate-500">Carregando...</span>
             </div>
           ) : (() => {
             const q = historySearch.toLowerCase().trim();
@@ -323,7 +322,7 @@ export default function AgentPage() {
               return (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
                   <MessageSquare className="h-16 w-16 text-slate-200 mb-4" />
-                  <p className="text-sm font-medium text-slate-400">
+                  <p className="text-sm font-medium text-slate-500">
                     {historySessions.length === 0 ? "Nenhuma conversa ainda" : "Nenhuma conversa encontrada"}
                   </p>
                 </div>
@@ -335,23 +334,23 @@ export default function AgentPage() {
                   {filtered.map((s) => (
                     <div
                       key={s.sessionId} onClick={() => loadSessionDetail(s.sessionId)}
-                      className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-200 hover:shadow-sm cursor-pointer transition-all"
+                      className="flex items-center gap-3 p-3 rounded-xl border border-slate-800 bg-slate-900/90 hover:border-blue-600/50 hover:shadow-sm cursor-pointer transition-all"
                     >
                       <div className="shrink-0">
-                        <div className="h-9 w-9 rounded-full bg-blue-50 flex items-center justify-center">
+                        <div className="h-9 w-9 rounded-full bg-blue-950/60 flex items-center justify-center ring-1 ring-blue-800/50">
                           <MessageSquare className="h-4 w-4 text-blue-500" />
                         </div>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-medium text-slate-800 truncate">{s.customerName}</span>
-                          <span className="text-[11px] text-slate-400">{s.systemName}</span>
+                          <span className="text-sm font-medium text-slate-200 truncate">{s.customerName}</span>
+                          <span className="text-[11px] text-slate-500">{s.systemName}</span>
                           <StatusBadge status={s.status} />
                         </div>
                         <p className="text-xs text-slate-500 truncate">{s.lastMessage || "Sem mensagens"}</p>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(s.createdAt)}</span>
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1"><Hash className="h-3 w-3" />{s.messageCount} msgs</span>
+                          <span className="text-[10px] text-slate-500 flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(s.createdAt)}</span>
+                          <span className="text-[10px] text-slate-500 flex items-center gap-1"><Hash className="h-3 w-3" />{s.messageCount} msgs</span>
                           {s.toolsUsed?.length > 0 && (
                             <span className="text-[10px] text-amber-500 flex items-center gap-1"><Wrench className="h-3 w-3" />{s.toolsUsed.length} tools</span>
                           )}
@@ -362,9 +361,9 @@ export default function AgentPage() {
                   ))}
                 </div>
                 {historyTotalPages > 1 && (
-                  <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-center gap-2 mt-3 pt-3 border-t border-slate-800">
                     <Button variant="outline" size="sm" disabled={historyPage <= 1} onClick={() => loadHistory(historyPage - 1)}>Anterior</Button>
-                    <span className="text-xs text-slate-400">Pág. {historyPage}/{historyTotalPages}</span>
+                    <span className="text-xs text-slate-500">Pág. {historyPage}/{historyTotalPages}</span>
                     <Button variant="outline" size="sm" disabled={historyPage >= historyTotalPages} onClick={() => loadHistory(historyPage + 1)}>Próxima</Button>
                   </div>
                 )}
@@ -383,14 +382,14 @@ export default function AgentPage() {
             </Button>
             <div className="flex-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-800">{historyDetail.customerName}</span>
-                <span className="text-xs text-slate-400">{historyDetail.systemName}</span>
+                <span className="text-sm font-bold text-slate-200">{historyDetail.customerName}</span>
+                <span className="text-xs text-slate-500">{historyDetail.systemName}</span>
                 <StatusBadge status={historyDetail.status} />
               </div>
               <div className="flex items-center gap-3 mt-0.5">
-                <span className="text-[10px] text-slate-400">ID: {historyDetail.sessionId.slice(0, 12)}...</span>
-                <span className="text-[10px] text-slate-400">Criado em: {formatDate(historyDetail.createdAt)}</span>
-                <span className="text-[10px] text-slate-400">Tentativas: {historyDetail.attemptCount}</span>
+                <span className="text-[10px] text-slate-500">ID: {historyDetail.sessionId.slice(0, 12)}...</span>
+                <span className="text-[10px] text-slate-500">Criado em: {formatDate(historyDetail.createdAt)}</span>
+                <span className="text-[10px] text-slate-500">Tentativas: {historyDetail.attemptCount}</span>
               </div>
             </div>
           </div>
@@ -398,12 +397,12 @@ export default function AgentPage() {
           {historyDetail.toolsUsed?.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-3">
               {historyDetail.toolsUsed.map((t, i) => (
-                <span key={i} className="rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-[10px] font-medium text-amber-700 flex items-center gap-1">
+                <span key={i} className="rounded-full bg-amber-950/50 border border-amber-800/60 px-2 py-0.5 text-[10px] font-medium text-amber-300 flex items-center gap-1">
                   <Wrench className="h-2.5 w-2.5" />{t}
                 </span>
               ))}
               {historyDetail.knowledgeSourcesUsed?.map((s, i) => (
-                <span key={i} className="rounded-full bg-purple-50 border border-purple-200 px-2 py-0.5 text-[10px] font-medium text-purple-700 flex items-center gap-1">
+                <span key={i} className="rounded-full bg-purple-950/50 border border-purple-800/60 px-2 py-0.5 text-[10px] font-medium text-purple-300 flex items-center gap-1">
                   <BookOpen className="h-2.5 w-2.5" />{s}
                 </span>
               ))}
@@ -413,7 +412,7 @@ export default function AgentPage() {
           {historyDetailLoading ? (
             <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
           ) : (
-            <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto rounded-xl border border-slate-800 bg-gradient-to-b from-slate-900/80 to-slate-950 p-4 space-y-3">
               {historyDetail.messages?.map((msg, i) => {
                 const isUser = msg.role === "user";
                 const isAgentSelected = !isUser && historySelectedMsg === i;
@@ -426,14 +425,14 @@ export default function AgentPage() {
                         className={`w-full text-left rounded-2xl px-4 py-2.5 text-sm leading-relaxed transition-all ${
                           isUser
                             ? "rounded-tr-sm bg-blue-600 text-white cursor-default"
-                            : `rounded-tl-sm bg-white text-slate-800 shadow-sm border ${
-                                isAgentSelected ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-100 hover:border-slate-200 cursor-pointer"
+                            : `rounded-tl-sm bg-slate-900/90 text-slate-200 shadow-sm border ${
+                                isAgentSelected ? "border-blue-500 ring-2 ring-blue-500/30" : "border-slate-800 hover:border-slate-700 cursor-pointer"
                               }`
                         }`}
                       >
                         {!isUser && (
-                          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-400">
-                            <span className="flex items-center gap-1"><Bot className="h-3 w-3" /> Resolve</span>
+                          <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-500">
+                            <span className="flex items-center gap-1"><Bot className="h-3 w-3" /> SmartFlow</span>
                             <span className="font-normal text-blue-500 opacity-80">ver fontes</span>
                           </div>
                         )}
@@ -445,7 +444,7 @@ export default function AgentPage() {
                         </div>
                       )}
                       {isAgentSelected && (
-                        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+                        <div className="mt-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3 shadow-sm">
                           <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-slate-500">Fontes desta resposta</p>
                           <MessageSourcesPanel meta={msg.meta} />
                         </div>
@@ -464,93 +463,93 @@ export default function AgentPage() {
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6">
             <div>
-              <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <Settings className="h-6 w-6 text-slate-600" /> Configurações do Agente
+              <h1 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                <Settings className="h-6 w-6 text-slate-500" /> Configurações da Triagem
               </h1>
-              <p className="text-xs text-slate-400 mt-0.5">Ajuste o comportamento, personalidade e parâmetros do agente</p>
+              <p className="text-xs text-slate-500 mt-0.5">Ajuste o comportamento, personalidade e parâmetros do agente</p>
             </div>
 
             {configLoading ? (
               <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-blue-400" /></div>
             ) : !agentConfig ? (
-              <div className="text-center py-16 text-slate-400">
+              <div className="text-center py-16 text-slate-500">
                 <AlertCircle className="h-8 w-8 mx-auto mb-2" />
                 <p>Não foi possível carregar as configurações.</p>
               </div>
             ) : (
               <>
-                {configError && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{configError}</div>}
+                {configError && <div className="rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-3 text-sm text-red-300">{configError}</div>}
                 {configSuccess && (
-                  <div className="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-800/60 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-300">
                     <Check className="h-4 w-4" />{configSuccess}
                   </div>
                 )}
 
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <h3 className="text-base font-semibold text-slate-900 mb-4">Parâmetros Gerais</h3>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-5">
+                  <h3 className="text-base font-semibold text-slate-100 mb-4">Parâmetros Gerais</h3>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Nome do Agente</label>
+                      <label className="mb-1 block text-sm font-medium text-slate-300">Nome do Agente</label>
                       <input type="text" value={agentConfig.agentDisplayName}
                         onChange={(e) => setAgentConfig({ ...agentConfig, agentDisplayName: e.target.value })}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                      <p className="mt-1 text-[11px] text-slate-400">Nome exibido nas mensagens espelhadas</p>
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                      <p className="mt-1 text-[11px] text-slate-500">Nome exibido nas mensagens espelhadas</p>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Delay de Buffer (ms)</label>
+                      <label className="mb-1 block text-sm font-medium text-slate-300">Delay de Buffer (ms)</label>
                       <input type="number" value={agentConfig.bufferDelayMs} min={0} max={30000}
                         onChange={(e) => setAgentConfig({ ...agentConfig, bufferDelayMs: parseInt(e.target.value) || 0 })}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                      <p className="mt-1 text-[11px] text-slate-400">Tempo de espera antes de processar</p>
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                      <p className="mt-1 text-[11px] text-slate-500">Tempo de espera antes de processar</p>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Modelo LLM</label>
+                      <label className="mb-1 block text-sm font-medium text-slate-300">Modelo LLM</label>
                       <input type="text" value={agentConfig.chatModel}
                         onChange={(e) => setAgentConfig({ ...agentConfig, chatModel: e.target.value })}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                      <p className="mt-1 text-[11px] text-slate-400">Ex: gpt-4o, gpt-4o-mini</p>
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                      <p className="mt-1 text-[11px] text-slate-500">Ex: gpt-4o, gpt-4o-mini</p>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Máximo de Tentativas</label>
+                      <label className="mb-1 block text-sm font-medium text-slate-300">Máximo de Tentativas</label>
                       <input type="number" value={agentConfig.maxAttempts} min={1} max={10}
                         onChange={(e) => setAgentConfig({ ...agentConfig, maxAttempts: parseInt(e.target.value) || 3 })}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                      <p className="mt-1 text-[11px] text-slate-400">Antes de escalar para analista humano</p>
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                      <p className="mt-1 text-[11px] text-slate-500">Antes de escalar para analista humano</p>
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-slate-700">Máximo de Iterações (Tools)</label>
+                      <label className="mb-1 block text-sm font-medium text-slate-300">Máximo de Iterações (Tools)</label>
                       <input type="number" value={agentConfig.maxToolIterations} min={1} max={20}
                         onChange={(e) => setAgentConfig({ ...agentConfig, maxToolIterations: parseInt(e.target.value) || 5 })}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-                      <p className="mt-1 text-[11px] text-slate-400">Ciclos de raciocínio + tools por mensagem</p>
+                        className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                      <p className="mt-1 text-[11px] text-slate-500">Ciclos de raciocínio + tools por mensagem</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
-                  <h3 className="text-base font-semibold text-slate-900 mb-1">Instruções Adicionais</h3>
-                  <p className="text-xs text-slate-400 mb-3">Instruções extras adicionadas ao final do prompt.</p>
+                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-5">
+                  <h3 className="text-base font-semibold text-slate-100 mb-1">Instruções Adicionais</h3>
+                  <p className="text-xs text-slate-500 mb-3">Instruções extras adicionadas ao final do prompt.</p>
                   <textarea value={agentConfig.customInstructions}
                     onChange={(e) => setAgentConfig({ ...agentConfig, customInstructions: e.target.value })}
                     rows={4} placeholder="Ex: Sempre pergunte o nome do município antes de sugerir soluções."
-                    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono" />
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono" />
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <div className="rounded-xl border border-slate-800 bg-slate-900/90 p-5">
                   <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-base font-semibold text-slate-900">Prompt do Sistema</h3>
-                    <span className="text-[11px] text-slate-400 font-mono">{agentConfig.systemPrompt.length} caracteres</span>
+                    <h3 className="text-base font-semibold text-slate-100">Prompt do Sistema</h3>
+                    <span className="text-[11px] text-slate-500 font-mono">{agentConfig.systemPrompt.length} caracteres</span>
                   </div>
-                  <p className="text-xs text-slate-400 mb-3">Prompt principal que define a personalidade e comportamento do agente.</p>
+                  <p className="text-xs text-slate-500 mb-3">Prompt principal que define a personalidade e comportamento do agente.</p>
                   <textarea value={agentConfig.systemPrompt}
                     onChange={(e) => setAgentConfig({ ...agentConfig, systemPrompt: e.target.value })}
                     rows={20}
-                    className="w-full rounded-lg border border-slate-300 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono leading-relaxed" />
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950/50 px-4 py-3 text-sm text-slate-200 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 font-mono leading-relaxed" />
                 </div>
 
                 <div className="flex items-center justify-between pb-4">
                   <button onClick={resetConfig} disabled={configSaving}
-                    className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-60">
+                    className="flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-900/50 disabled:opacity-60">
                     <RotateCw className="h-4 w-4" /> Resetar para Padrão
                   </button>
                   <button onClick={saveConfig} disabled={configSaving}

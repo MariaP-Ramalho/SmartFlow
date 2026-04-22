@@ -23,15 +23,15 @@ export function DataTable<T extends Record<string, any>>({
   onRowClick,
 }: DataTableProps<T>) {
   return (
-    <div className={cn("overflow-x-auto rounded-lg border border-slate-200", className)}>
+    <div className={cn("overflow-x-auto rounded-lg border border-slate-800", className)}>
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 bg-slate-50">
+        <thead className="border-b border-slate-800 bg-slate-900/60">
           <tr>
             {columns.map((col) => (
               <th
                 key={col.key}
                 className={cn(
-                  "px-4 py-3 font-medium text-slate-600",
+                  "px-4 py-3 font-medium text-slate-400",
                   col.className
                 )}
               >
@@ -40,12 +40,12 @@ export function DataTable<T extends Record<string, any>>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-slate-800">
           {data.length === 0 ? (
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-4 py-12 text-center text-slate-400"
+                className="px-4 py-12 text-center text-slate-500"
               >
                 {emptyMessage}
               </td>
@@ -56,12 +56,12 @@ export function DataTable<T extends Record<string, any>>({
                 key={i}
                 onClick={() => onRowClick?.(row, i)}
                 className={cn(
-                  "bg-white transition-colors hover:bg-slate-50",
+                  "bg-slate-950/40 transition-colors hover:bg-slate-800/50",
                   onRowClick && "cursor-pointer"
                 )}
               >
                 {columns.map((col) => (
-                  <td key={col.key} className={cn("px-4 py-3 text-slate-700", col.className)}>
+                  <td key={col.key} className={cn("px-4 py-3 text-slate-300", col.className)}>
                     {col.render
                       ? col.render(row[col.key], row, i)
                       : (row[col.key] as React.ReactNode)}

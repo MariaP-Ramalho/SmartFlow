@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, HttpCode, Logger, Res, Query } from '@nestjs/common';
+import { Controller, Post, Body, Get, HttpCode, Logger, Res, Query, Param } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Response } from 'express';
 import { Public } from '../auth/auth.guard';
@@ -7,6 +7,9 @@ import { ChatService } from '../agent/chat.service';
 import { AgentConfigService } from '../agent/agent-config.service';
 import { WhatsAppConfigService } from './whatsapp-config.service';
 import { ReferenceCaseService } from '../agent/reference-case.service';
+import { WhatsAppAgentService } from './whatsapp-agent.service';
+import { UazapiConnectionManager, UazapiConnection } from './uazapi-connection-manager.service';
+import { WhatsAppAgentDocument } from './schemas/whatsapp-agent.schema';
 import OpenAI from 'openai';
 
 interface UazapiWebhookPayload {
@@ -133,6 +136,8 @@ export class WhatsAppWebhookController {
     private readonly waConfig: WhatsAppConfigService,
     private readonly configService: ConfigService,
     private readonly referenceCaseService: ReferenceCaseService,
+    private readonly whatsAppAgentService: WhatsAppAgentService,
+    private readonly connManager: UazapiConnectionManager,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY') || this.configService.get<string>('llm.openai.apiKey');
     this.openai = apiKey ? new OpenAI({ apiKey }) : null;
@@ -454,6 +459,348 @@ export class WhatsAppWebhookController {
     const allOk = steps.every((s) => s.status === 'ok' || s.status === 'skipped');
     return { ok: allOk, steps };
   }
+
+  // ─── Multi-Agent Webhook ─────────────────────────────────────
+
+  @Post(':agentSlug')
+  @HttpCode(200)
+  async handleMultiAgentWebhook(
+    @Param('agentSlug') agentSlug: string,
+    @Body() body: UazapiWebhookPayload,
+    @Res() res: Response,
+  ) {
+    res.status(200).send('OK');
+
+    const agent = this.whatsAppAgentService.getBySlugCached(agentSlug);
+    if (!agent) {
+      this.logger.warn(`Webhook for unknown agent slug: ${agentSlug}`);
+      return;
+    }
+    if (!agent.enabled) {
+      this.logger.debug(`Webhook for disabled agent: ${agentSlug}`);
+      return;
+    }
+
+    const conn = this.connManager.getConnection(agentSlug);
+    if (!conn) {
+      this.logger.error(`No Uazapi connection for agent: ${agentSlug}`);
+      return;
+    }
+
+    try {
+      const parsed = this.parsePayload(body);
+      const { phone, name, text, messageId, remoteJid, mediaType, isFromMe } = parsed;
+
+      if (!phone || (!text && !mediaType)) return;
+
+      const key = `${agentSlug}:${phone}`;
+
+      if (isFromMe) {
+        const msgText = text || '';
+        if (this.isAgentEcho(key, msgText)) return;
+        this.analystCooldown.set(key, Date.now() + this.ANALYST_COOLDOWN_MS);
+        this.analystCollaborated.set(key, true);
+        const sessionId = `wa-${agentSlug}-${phone}`;
+        this.chatService.injectAnalystGuidance(sessionId, 'Analista', msgText);
+        return;
+      }
+
+      if (remoteJid && messageId) conn.markAsRead(remoteJid, messageId);
+
+      let effectiveText = text || '';
+      if (mediaType === 'image' && messageId) {
+        const imageDesc = await this.processImageWithConn(conn, messageId, text || undefined);
+        if (imageDesc) {
+          effectiveText = imageDesc;
+        } else if (!text) {
+          effectiveText = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
+        }
+      }
+
+      const zapflowParsed = this.parseZapFlowMessage(effectiveText);
+      if (zapflowParsed.isSystemMessage) return;
+
+      if (zapflowParsed.isNewAtendimento) {
+        this.chatService.clearSession(`wa-${agentSlug}-${phone}`);
+        this.processingLock.delete(key);
+        this.rebufferCount.delete(key);
+        this.recentAgentSent.delete(key);
+        this.analystCooldown.delete(key);
+        this.analystCollaborated.delete(key);
+        this.activeAtendimentoByPhone.delete(key);
+        this.transferredChannels.delete(key);
+
+        const atd = zapflowParsed.atendimentoData;
+        const clientName = atd?.cliente || name;
+        const systemName = atd?.sistema || 'WhatsApp';
+        const greeting =
+          `Novo atendimento #${atd?.numero || '?'}. ` +
+          `Cliente: ${clientName}. Entidade: ${atd?.entidade || '?'}. ` +
+          `Sistema: ${systemName}. ` +
+          `O cliente está aguardando. Cumprimente e pergunte como pode ajudar.`;
+
+        this.activeClientByPhone.set(key, clientName);
+        const ateId = parseInt(atd?.numero || '0', 10);
+        if (ateId > 0) this.activeAtendimentoByPhone.set(key, ateId);
+
+        this.multiAgentBufferMessage(agentSlug, phone, clientName, greeting, systemName);
+        return;
+      }
+
+      if (this.transferredChannels.has(key)) return;
+
+      if (zapflowParsed.clientName) {
+        const isSystemActor = WhatsAppWebhookController.ZAPFLOW_SYSTEM_ACTORS.some(
+          (p) => p.test(zapflowParsed.clientName!),
+        );
+        if (isSystemActor) return;
+      }
+
+      const currentOwner = this.activeClientByPhone.get(key);
+      let actualName: string;
+      let actualText: string;
+
+      if (zapflowParsed.clientName && zapflowParsed.clientMessage) {
+        actualText = zapflowParsed.clientMessage;
+        actualName = currentOwner && this.isSameClient(currentOwner, zapflowParsed.clientName)
+          ? currentOwner
+          : (currentOwner || zapflowParsed.clientName);
+      } else {
+        actualName = currentOwner || name;
+        actualText = effectiveText;
+      }
+
+      this.logger.log(`[${agentSlug}] WhatsApp from ${actualName} (${phone}): ${actualText.slice(0, 80)}`);
+      this.multiAgentBufferMessage(agentSlug, phone, actualName, actualText);
+    } catch (err) {
+      this.logger.error(`[${agentSlug}] Webhook error: ${err instanceof Error ? err.stack : err}`);
+    }
+  }
+
+  private async multiAgentBufferMessage(
+    agentSlug: string,
+    phone: string,
+    customerName: string,
+    text: string,
+    systemName?: string,
+  ) {
+    const agent = this.whatsAppAgentService.getBySlugCached(agentSlug);
+    const delay = agent?.bufferDelayMs || this.BUFFER_DELAY_MS;
+    const key = `${agentSlug}:${phone}`;
+
+    if (!this.activeClientByPhone.has(key)) {
+      this.activeClientByPhone.set(key, customerName);
+    }
+
+    const existing = this.messageBuffer.get(key);
+    if (existing) {
+      existing.texts.push(text);
+      if (systemName) existing.systemName = systemName;
+      clearTimeout(existing.timer);
+      existing.timer = setTimeout(() => this.multiAgentFlush(agentSlug, phone), delay);
+    } else {
+      const timer = setTimeout(() => this.multiAgentFlush(agentSlug, phone), delay);
+      this.messageBuffer.set(key, { texts: [text], customerName, systemName, timer });
+    }
+  }
+
+  private async multiAgentFlush(agentSlug: string, phone: string) {
+    const key = `${agentSlug}:${phone}`;
+    const buffered = this.messageBuffer.get(key);
+    if (!buffered) return;
+    this.messageBuffer.delete(key);
+
+    const agent = this.whatsAppAgentService.getBySlugCached(agentSlug);
+    if (!agent) return;
+
+    const conn = this.connManager.getConnection(agentSlug);
+    if (!conn) return;
+
+    if (this.processingLock.has(key)) {
+      if (this.isLockExpired(key)) {
+        this.processingLock.delete(key);
+        this.rebufferCount.delete(key);
+      } else {
+        const count = (this.rebufferCount.get(key) || 0) + 1;
+        this.rebufferCount.set(key, count);
+        if (count > 5) {
+          this.processingLock.delete(key);
+          this.rebufferCount.delete(key);
+        } else {
+          for (const t of buffered.texts) {
+            this.multiAgentBufferMessage(agentSlug, phone, buffered.customerName, t, buffered.systemName);
+          }
+          return;
+        }
+      }
+    }
+
+    const cooldownExpiry = this.analystCooldown.get(key);
+    if (cooldownExpiry && Date.now() < cooldownExpiry) {
+      await this.delay(cooldownExpiry - Date.now());
+    }
+    this.analystCooldown.delete(key);
+
+    this.processingLock.set(key, Date.now());
+    this.rebufferCount.delete(key);
+
+    const IMAGE_MARKER = '[IMAGEM_RECEBIDA_AGUARDANDO_TRANSCRICAO]';
+    const realTexts = buffered.texts.filter(t => t !== IMAGE_MARKER);
+    const hasImageMarker = buffered.texts.some(t => t === IMAGE_MARKER);
+
+    if (hasImageMarker && realTexts.length === 0) {
+      this.processingLock.delete(key);
+      const fallback = 'Recebi sua imagem, mas não consegui visualizá-la. Pode me descrever o que aparece na tela?';
+      await conn.sendText(phone, fallback);
+      this.trackAgentSent(key, fallback);
+      return;
+    }
+
+    const combinedMessage = realTexts.length > 0 ? realTexts.join('\n') : buffered.texts.join('\n');
+    this.logger.log(`[${agentSlug}] Flushing ${buffered.texts.length} msg(s) from ${buffered.customerName} (${phone})`);
+
+    try {
+      conn.sendTyping(phone, 8000);
+
+      this.multiAgentMirror(agent, conn, `*${buffered.customerName}*: ${combinedMessage}`);
+
+      const sessionId = `wa-${agentSlug}-${phone}`;
+      const chatStart = Date.now();
+
+      const chatPromise = this.chatService.chat({
+        message: combinedMessage,
+        sessionId,
+        systemName: buffered.systemName || 'WhatsApp',
+        customerName: buffered.customerName,
+        atendimentoId: this.activeAtendimentoByPhone.get(key),
+        agentSystemPrompt: agent.systemPrompt || undefined,
+        agentChatModel: agent.chatModel || undefined,
+        agentCustomInstructions: agent.customInstructions || undefined,
+      });
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Chat timeout')), this.PROCESSING_TIMEOUT_MS),
+      );
+      const response = await Promise.race([chatPromise, timeoutPromise]);
+
+      this.logger.log(`[${agentSlug}] Chat responded in ${Date.now() - chatStart}ms for ${phone}`);
+
+      if (response.hasError || !response.reply) {
+        this.multiAgentEscalate(agent, conn, buffered.customerName, phone, 'Erro interno do agente');
+        return;
+      }
+
+      const cleanReply = this.sanitizeForWhatsApp(response.reply);
+      const chunks = this.splitIntoChunks(cleanReply);
+
+      let allSent = true;
+      for (let idx = 0; idx < chunks.length; idx++) {
+        const chunk = chunks[idx];
+        const typingDelayMs = Math.min(10000, Math.max(4000, chunk.length * 30));
+        conn.sendTyping(phone, typingDelayMs + 2000);
+        await this.delay(typingDelayMs);
+        const sent = await conn.sendText(phone, chunk);
+        if (!sent) { allSent = false; break; }
+        this.trackAgentSent(key, chunk);
+      }
+
+      if (allSent) {
+        this.multiAgentMirror(agent, conn, `*${agent.agentDisplayName}*: ${cleanReply}`);
+      }
+
+      if (response.managerNotifications?.length > 0) {
+        for (const notif of response.managerNotifications) {
+          if (notif.reason === 'issue_resolved') {
+            const zapflowCmd = `@zapflow finalizar atendimento ${notif.message}`;
+            this.trackAgentSent(key, zapflowCmd);
+            conn.sendText(phone, zapflowCmd);
+          } else if (agent.managerWhatsApp) {
+            const notifMsg = `[${this.reasonLabel(notif.reason)}]\nCliente: *${buffered.customerName}* (${phone})\n${notif.message}`;
+            conn.sendText(agent.managerWhatsApp, notifMsg);
+          }
+        }
+      }
+
+      if (response.transferCommands?.length > 0) {
+        this.transferredChannels.add(key);
+        for (const cmd of response.transferCommands) {
+          const sanitizedReason = (cmd.reason || '').replace(/[\n\r]+/g, ' ').replace(/,/g, ' ').trim().slice(0, 200);
+          const zapflowCmd = `@zapflow transferir idnovocolaborador=${cmd.targetTecnicoId}, motivo=${sanitizedReason}`;
+          this.trackAgentSent(key, zapflowCmd);
+          conn.sendText(phone, zapflowCmd);
+        }
+      }
+
+      this.logger.log(
+        `[${agentSlug}] Reply sent to ${phone}. Tools: ${response.toolsUsed?.join(', ') || 'none'}. Duration: ${response.totalDurationMs}ms`,
+      );
+    } catch (err) {
+      this.logger.error(`[${agentSlug}] Flush error for ${phone}: ${err instanceof Error ? err.stack : err}`);
+      this.multiAgentEscalate(agent, conn, buffered.customerName, phone, err instanceof Error ? err.message : String(err));
+    } finally {
+      this.processingLock.delete(key);
+    }
+  }
+
+  private multiAgentMirror(agent: WhatsAppAgentDocument, conn: UazapiConnection, text: string): void {
+    const phones = this.mergeNormalizedPhones(agent.managerWhatsApp || '', agent.mirrorWhatsAppExtra || '');
+    for (const p of phones) {
+      conn.sendText(p, text).catch(() => {});
+    }
+  }
+
+  private multiAgentEscalate(
+    agent: WhatsAppAgentDocument,
+    conn: UazapiConnection,
+    customerName: string,
+    customerPhone: string,
+    reason: string,
+  ): void {
+    if (!agent.managerWhatsApp) return;
+    const msg = `[ALERTA ${agent.agentDisplayName}]\nErro no atendimento de *${customerName}* (${customerPhone}).\nMotivo: ${reason.slice(0, 200)}`;
+    conn.sendText(agent.managerWhatsApp, msg).catch(() => {});
+  }
+
+  private async processImageWithConn(conn: UazapiConnection, messageId: string, caption?: string): Promise<string | null> {
+    if (!this.openai) return caption ? `[Imagem enviada] ${caption}` : null;
+    try {
+      const media = await conn.downloadMedia(messageId);
+      if (!media) return caption ? `[Imagem enviada] ${caption}` : null;
+      const base64Url = `data:${media.mimetype};base64,${media.base64}`;
+      const promptText = caption
+        ? `O cliente enviou esta imagem com legenda: "${caption}". Descreva focando em suporte técnico. Seja conciso.`
+        : 'O cliente enviou esta imagem. Descreva focando em suporte técnico. Seja conciso.';
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: [
+          { type: 'image_url', image_url: { url: base64Url, detail: 'low' } },
+          { type: 'text', text: promptText },
+        ] as OpenAI.ChatCompletionContentPart[] }],
+        max_tokens: 300,
+        temperature: 0.2,
+      });
+      const description = response.choices?.[0]?.message?.content?.trim();
+      if (!description) return caption ? `[Imagem enviada] ${caption}` : null;
+      return `[Imagem enviada] ${description}`;
+    } catch {
+      return caption ? `[Imagem enviada] ${caption}` : null;
+    }
+  }
+
+  private mergeNormalizedPhones(primary: string, extraCsv: string): string[] {
+    const out = new Set<string>();
+    const add = (raw: string) => {
+      const d = raw.replace(/\D/g, '');
+      if (d.length < 10) return;
+      out.add(d.startsWith('55') ? d : `55${d}`);
+    };
+    if (primary?.trim()) add(primary);
+    for (const part of extraCsv.split(/[,;\n]+/)) {
+      if (part.trim()) add(part.trim());
+    }
+    return [...out];
+  }
+
+  // ─── End Multi-Agent ─────────────────────────────────────────
 
   private static readonly IMAGE_TYPES = new Set([
     'image', 'imageMessage', 'ImageMessage', 'stickerMessage', 'StickerMessage',

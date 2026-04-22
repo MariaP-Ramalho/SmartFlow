@@ -178,7 +178,7 @@ export class KnowledgeHit {
   @Prop({ required: true })
   documentId: string;
 
-  @Prop({ required: true, enum: ['assistant_kb', 'daily_transcript', 'clickup_bug', 'resolved_case'] })
+  @Prop({ required: true, enum: ['faq', 'manual', 'past_ticket', 'internal_doc', 'pdf_upload', 'web_crawl', 'assistant_kb', 'daily_transcript', 'clickup_bug', 'resolved_case'] })
   source: string;
 
   @Prop({ required: true })

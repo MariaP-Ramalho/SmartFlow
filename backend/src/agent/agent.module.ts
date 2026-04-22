@@ -22,8 +22,10 @@ import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
 import { ConversationService } from './conversation.service';
 import { WebhookController } from './webhook.controller';
+import { AgentApiController } from './agent-api.controller';
 import { ChatController } from './chat.controller';
 import { ChatService } from './chat.service';
+import { BufferManagerService } from './buffer-manager.service';
 import { AgentConfigService } from './agent-config.service';
 import { DailyReportService } from './daily-report.service';
 
@@ -37,7 +39,7 @@ import { DailyReportService } from './daily-report.service';
     ]),
     TicketsModule, KnowledgeModule, PoliciesModule, ZapFlowPgModule,
   ],
-  controllers: [AgentController, WebhookController, ChatController],
+  controllers: [AgentController, WebhookController, AgentApiController, ChatController],
   providers: [
     ToolRegistry,
     TicketTool,
@@ -51,11 +53,12 @@ import { DailyReportService } from './daily-report.service';
     AgentService,
     ConversationService,
     ChatService,
+    BufferManagerService,
     AgentConfigService,
     DailyReportService,
     ReferenceCaseService,
   ],
-  exports: [AgentService, ConversationService, ChatService, AgentConfigService, ReferenceCaseService, ToolRegistry],
+  exports: [AgentService, ConversationService, ChatService, BufferManagerService, AgentConfigService, ReferenceCaseService, ToolRegistry],
 })
 export class AgentModule implements OnModuleInit {
   constructor(
