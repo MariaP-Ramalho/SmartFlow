@@ -23,7 +23,7 @@ function resolveTitle(pathname: string): string {
   for (const [route, title] of Object.entries(pageTitles)) {
     if (route !== "/" && pathname.startsWith(route)) return title;
   }
-  return "SmartFlow";
+  return "MindFlow";
 }
 
 export function Header() {

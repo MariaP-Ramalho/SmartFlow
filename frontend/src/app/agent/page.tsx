@@ -432,7 +432,7 @@ export default function AgentPage() {
                       >
                         {!isUser && (
                           <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-medium text-slate-500">
-                            <span className="flex items-center gap-1"><Bot className="h-3 w-3" /> SmartFlow</span>
+                            <span className="flex items-center gap-1"><Bot className="h-3 w-3" /> MindFlow</span>
                             <span className="font-normal text-blue-500 opacity-80">ver fontes</span>
                           </div>
                         )}

@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { isPublicPath } from "@/lib/public-routes";
 
 interface User {
   id: string;
@@ -26,8 +27,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-const PUBLIC_ROUTES = ["/login", "/register"];
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -35,30 +34,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    const storedUser = localStorage.getItem("auth_user");
+    try {
+      const token = localStorage.getItem("auth_token");
+      const storedUser = localStorage.getItem("auth_user");
 
-    if (token && storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem("auth_token");
-        localStorage.removeItem("auth_user");
+      if (token && storedUser) {
+        try {
+          setUser(JSON.parse(storedUser));
+        } catch {
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("auth_user");
+        }
       }
+    } catch {
+      /* localStorage indisponível (modo privado / política) — segue sem sessão */
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
     if (loading) return;
 
-    const isPublic = PUBLIC_ROUTES.includes(pathname);
+    const isPublic = isPublicPath(pathname);
 
     if (!user && !isPublic) {
       router.push("/login");
     }
 
-    if (user && PUBLIC_ROUTES.includes(pathname)) {
+    if (user && isPublic) {
       router.push("/");
     }
   }, [user, loading, pathname, router]);
@@ -85,9 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user, loading, login, logout],
   );
 
+  /* Overlay só em rotas privadas: em /login e /register não bloqueia a UI (evita “tela vazia” se CSS/JS falhar parcialmente). */
+  const showSessionOverlay = loading && !isPublicPath(pathname);
+
   return (
     <AuthContext.Provider value={value}>
-      {loading && (
+      {showSessionOverlay && (
         <div
           className="fixed inset-0 z-[200] flex items-center justify-center"
           style={{ backgroundColor: "hsl(var(--background))" }}
@@ -95,12 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           aria-label="Carregando sessão"
         >
           <div
-            className="h-8 w-8 animate-spin rounded-full"
-            style={{
-              border: "2px solid hsl(var(--primary))",
-              borderTopColor: "transparent",
-              borderRadius: "9999px",
-            }}
+            className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
+            style={{ borderRadius: "9999px" }}
           />
         </div>
       )}

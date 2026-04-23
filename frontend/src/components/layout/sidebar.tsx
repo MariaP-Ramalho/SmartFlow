@@ -17,7 +17,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
-import { SmartFlowLogo } from "@/components/brand/smart-flow-logo";
+import { MindFlowLogo } from "@/components/brand/mindflow-logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import type { LucideIcon } from "lucide-react";
 
@@ -62,9 +62,9 @@ export function Sidebar() {
           "flex h-16 min-h-16 items-center gap-2 border-b border-slate-800 px-4 transition-opacity hover:opacity-95",
           collapsed && "justify-center px-2",
         )}
-        title="SmartFlow — início"
+        title="MindFlow — início"
       >
-        <SmartFlowLogo
+        <MindFlowLogo
           className={cn("rounded-xl shadow-md", collapsed ? "h-9 w-9" : "h-9 w-9")}
           showWordmark={!collapsed}
           wordmarkClassName="text-slate-100"

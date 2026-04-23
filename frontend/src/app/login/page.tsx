@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
-import { SmartFlowLogo } from "@/components/brand/smart-flow-logo";
+import { MindFlowLogo } from "@/components/brand/mindflow-logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import api from "@/lib/api";
 
@@ -35,8 +35,8 @@ export default function LoginPage() {
     <div className="login-page-root flex items-center justify-center bg-slate-900">
       <div className="w-full max-w-md px-6">
         <div className="mb-8 flex flex-col items-center gap-3">
-          <SmartFlowLogo className="h-14 w-14 rounded-2xl shadow-xl shadow-blue-950/50" />
-          <h1 className="text-2xl font-bold text-white">SmartFlow</h1>
+          <MindFlowLogo className="h-14 w-14 rounded-2xl shadow-xl shadow-violet-950/50" />
+          <h1 className="text-2xl font-bold text-white">MindFlow</h1>
           <p className="text-sm text-slate-400">
             Plataforma de resolução inteligente
           </p>
@@ -134,7 +134,7 @@ export default function LoginPage() {
         </p>
 
         <p className="mt-4 text-center text-xs text-slate-500">
-          SmartFlow &copy; {new Date().getFullYear()}
+          MindFlow &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

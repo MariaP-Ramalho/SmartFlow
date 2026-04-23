@@ -1,4 +1,5 @@
 import axios from "axios";
+import { isPublicPath } from "@/lib/public-routes";
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3003",
@@ -21,7 +22,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== "undefined") {
-      const isAuthRoute = window.location.pathname === "/login" || window.location.pathname === "/register";
+      const isAuthRoute = isPublicPath(window.location.pathname);
       if (!isAuthRoute) {
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");

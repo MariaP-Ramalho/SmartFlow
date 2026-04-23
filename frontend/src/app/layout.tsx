@@ -10,9 +10,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "SmartFlow",
+  title: "MindFlow",
   description:
-    "Plataforma inteligente de resolução de tickets com IA autônoma",
+    "Plataforma MindFlow: resolução de tickets com IA e fluxo inteligente de atendimento",
 };
 
 export default function RootLayout({

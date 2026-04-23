@@ -2,16 +2,15 @@
 
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
+import { isPublicPath } from "@/lib/public-routes";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
-
-const PUBLIC_ROUTES = ["/login", "/register"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const pathname = usePathname();
 
-  const isPublic = PUBLIC_ROUTES.includes(pathname);
+  const isPublic = isPublicPath(pathname);
 
   /* Enquanto a sessão hidrata, só repassa a página (overlay fica no AuthProvider). */
   if (loading) {
@@ -29,12 +28,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         }}
       >
         <div
-          className="h-8 w-8 animate-spin rounded-full"
-          style={{
-            border: "2px solid hsl(var(--primary))",
-            borderTopColor: "transparent",
-            borderRadius: "9999px",
-          }}
+          className="h-8 w-8 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"
         />
         <p className="mt-4 max-w-sm text-center text-sm opacity-90">
           Redirecionando para o login…
